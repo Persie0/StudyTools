@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Chapter Splitter</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="lib/pdf-lib.min.js"></script>
+    <script src="lib/jszip.min.js"></script>
+</head>
+
+<body>
+    <h1>PDF Chapter Splitter</h1>
+
+    <div class="drop-zone" id="dropZone">
+        <p>Drag & drop your PDF here or click to select</p>
+        <input type="file" id="fileInput" accept=".pdf" style="display: none">
+    </div>
+
+    <div class="progress-container" id="progressContainer">
+        <div class="progress-bar">
+            <div class="progress" id="progress"></div>
+        </div>
+        <div class="status" id="status">Processing...</div>
+    </div>
+
+    <div class="controls" id="controls">
+        <label for="levelSelect">Split at heading level:</label>
+        <select id="levelSelect">
+            <!-- Options will be dynamically populated -->
+        </select>
+        <button id="splitButton">Split PDF</button>
+    </div>
+
+    <div id="outline"></div>
+
+    <script type="module">
+        import * as pdfjsLib from './lib/pdf.min.mjs';
+        pdfjsLib.GlobalWorkerOptions.workerSrc = './lib/pdf.worker.min.mjs';
+
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progress');
+        const controls = document.getElementById('controls');
+        const levelSelect = document.getElementById('levelSelect');
+        const splitButton = document.getElementById('splitButton');
+        const outlineDiv = document.getElementById('outline');
+        const statusDiv = document.getElementById('status');
+
+        let currentPdf = null;
+        let outline = null;
+        let pdfBytes = null;
+        let arrayBuffer = null;
+
+        // Drag and drop handlers
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type === 'application/pdf') {
+                handleFile(file);
+            }
+        });
+
+        dropZone.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                handleFile(file);
+            }
+        });
+
+        async function handleFile(file) {
+            progressContainer.style.display = 'block';
+            controls.style.display = 'none';
+            outlineDiv.style.display = 'none';
+            progressBar.style.width = '0%';
+
+            try {
+                // Store PDF bytes for later use
+                pdfBytes = new Uint8Array(await file.arrayBuffer());
+                arrayBuffer = await file.arrayBuffer();
+
+                // Load the PDF
+                currentPdf = await pdfjsLib.getDocument({ data: pdfBytes }).promise;
+                progressBar.style.width = '50%';
+
+                // Get the outline (table of contents)
+                outline = await currentPdf.getOutline();
+
+                if (!outline || outline.length === 0) {
+                    statusDiv.textContent = 'No outline found in PDF. Cannot split by chapters.';
+                    return;
+                }
+
+                // Display outline
+                outlineDiv.style.display = 'block';
+                outlineDiv.innerHTML = '<h2>Document Outline</h2>';
+                await displayOutline(outline, outlineDiv);
+
+                // Populate level select options
+                populateLevelSelect(outline);
+
+                // Show controls
+                controls.style.display = 'flex';
+                progressBar.style.width = '100%';
+                statusDiv.textContent = 'PDF loaded successfully. Select split level and click Split PDF.';
+
+                console.log('Outline:', outline);
+            } catch (error) {
+                statusDiv.textContent = 'Error processing PDF: ' + error.message;
+            }
+        }
+
+        async function getPageNumberByDest(dest) {
+            try {
+                const destination = await currentPdf.getDestination(dest);
+                const pageRef = destination[0];
+                
+                // Map the page reference to an actual page number
+                const pageIndex = await currentPdf.getPageIndex(pageRef);
+                return pageIndex + 1; // Pages are zero-indexed, so add 1
+            } catch (error) {
+                console.error(`Error getting page for dest: ${dest}`, error);
+                return null;
+            }
+        }
+
+        async function displayOutline(items, container, level = 1) {
+            const ul = document.createElement('ul');
+            for (const item of items) {
+                const li = document.createElement('li');
+                const div = document.createElement('div');
+                div.className = 'outline-item';
+
+                const levelIcon = document.createElement('span');
+                levelIcon.className = 'level-icon';
+                levelIcon.textContent = level;
+
+                div.appendChild(levelIcon);
+                div.appendChild(document.createTextNode(item.title));
+                
+                if (item.dest) {
+                    const pageNumber = await getPageNumberByDest(item.dest);
+                    if (pageNumber) {
+                        div.appendChild(document.createTextNode(` (Page ${pageNumber})`));
+                    }
+                }
+                
+                li.appendChild(div);
+
+                if (item.items && item.items.length > 0) {
+                    await displayOutline(item.items, li, level + 1);
+                }
+                ul.appendChild(li);
+            }
+            container.appendChild(ul);
+        }
+
+        function populateLevelSelect(outline) {
+            let maxLevel = getMaxLevel(outline);
+            levelSelect.innerHTML = '';
+            for (let i = 1; i <= maxLevel; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.innerHTML = `
+                    <div class="level-preview">
+                        <span class="level-icon">${i}</span> Up to level ${i}
+                    </div>
+                `;
+                levelSelect.appendChild(option);
+            }
+            console.log('Max outline level:', maxLevel);
+        }
+
+        function getMaxLevel(items, currentLevel = 1) {
+            let maxLevel = currentLevel;
+            items.forEach(item => {
+                if (item.items && item.items.length > 0) {
+                    const subLevel = getMaxLevel(item.items, currentLevel + 1);
+                    maxLevel = Math.max(maxLevel, subLevel);
+                }
+            });
+            return maxLevel;
+        }
+
+        function sanitizeFilename(filename) {
+            return filename.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        }
+
+        async function splitPDF(outline, maxLevel) {
+            const chapters = [];
+            let currentChapter = null;
+
+            async function processOutlineItems(items, level = 1) {
+                for (let i = 0; i < items.length; i++) {
+                    const item = items[i];
+                    let startPage = await getPageNumberByDest(item.dest);
+
+                    if (startPage === null) {
+                        console.warn(`Unable to determine page number for item: ${item.title}`);
+                        continue;
+                    }
+
+                    if (level <= maxLevel) {
+                        if (currentChapter) {
+                            currentChapter.endPage = startPage - 1;
+                            chapters.push(currentChapter);
+                        }
+                        currentChapter = {
+                            title: item.title,
+                            startPage: startPage,
+                            endPage: currentPdf.numPages
+                        };
+                    }
+
+                    if (item.items && item.items.length > 0) {
+                        await processOutlineItems(item.items, level + 1);
+                    }
+                }
+            }
+
+            await processOutlineItems(outline);
+            if (currentChapter) {
+                chapters.push(currentChapter);
+            }
+
+            console.log('Chapters:', chapters);
+            console.log('Number of chapters:', chapters.length);
+            return chapters;
+        }
+
+        splitButton.addEventListener('click', async () => {
+            try {
+                if (!currentPdf || !outline || !pdfBytes) {
+                    statusDiv.textContent = 'Error: PDF not loaded or outline not available.';
+                    return;
+                }
+
+                const level = parseInt(levelSelect.value);
+                statusDiv.textContent = 'Analyzing PDF structure...';
+                progressBar.style.width = '10%';
+
+                const chapters = await splitPDF(outline, level);
+                if (chapters.length === 0) {
+                    statusDiv.textContent = 'No chapters found at the specified level.';
+                    console.log('No chapters found at the specified level.');
+                    return;
+                }
+
+                const zip = new JSZip();
+                const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
+
+                for (let i = 0; i < chapters.length; i++) {
+                    const chapter = chapters[i];
+                    progressBar.style.width = `${10 + (i / chapters.length) * 80}%`;
+                    statusDiv.textContent = `Processing chapter ${i + 1} of ${chapters.length}: ${chapter.title}`;
+
+                    const newPdf = await PDFLib.PDFDocument.create();
+                    const startPage = chapter.startPage;
+                    const endPage = i < chapters.length - 1 ? chapters[i + 1].startPage - 1 : chapter.endPage;
+                    console.log(`Chapter: ${chapter.title} has start page: ${startPage} and end page: ${endPage}`);
+                    const pageIndices = Array.from(
+                        { length: endPage - startPage + 1 },
+                        (_, i) => startPage - 1 + i
+                    );
+                    const pages = await newPdf.copyPages(pdfDoc, pageIndices);
+
+                    pages.forEach(page => newPdf.addPage(page));
+                    const chapterPdfBytes = await newPdf.save({ useObjectStreams: false });
+
+                    const filename = `${String(i + 1).padStart(2, '0')}_${sanitizeFilename(chapter.title)}.pdf`;
+                    zip.file(filename, chapterPdfBytes);
+
+                    console.log(`Chapter ${i + 1} processed:`, chapter);
+                }
+
+                statusDiv.textContent = 'Creating download file...';
+                progressBar.style.width = '90%';
+                const zipContent = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+
+                // Create download link
+                const downloadUrl = URL.createObjectURL(zipContent);
+                const downloadLink = document.createElement('a');
+                downloadLink.href = downloadUrl;
+                downloadLink.download = 'split_chapters.zip';
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+
+                // Delay the URL revocation to ensure the download starts
+                setTimeout(() => {
+                    URL.revokeObjectURL(downloadUrl);
+                }, 100);
+
+                statusDiv.textContent = 'PDF split complete! Download started.';
+                progressBar.style.width = '100%';
+                console.log('PDF split complete. Total chapters:', chapters.length);
+            } catch (error) {
+                console.error('Error splitting PDF:', error);
+                statusDiv.textContent = `Error: ${error.message}. Please try again.`;
+                progressBar.style.width = '0%';
+            }
+        });   </script>
+</body>
+
+</html>

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Page Stripper</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="lib/jszip.min.js"></script>
+    <script src="lib/pdf-lib.min.js"></script>
+    <script src="lib/download.min.js"></script>
+    <link rel="icon" type="image/png" href="images/icon64.png">
+</head>
+<body>
+    <div class="container">
+        <h1>PDF Page Stripper
+            <a href="https://github.com/Persie0/PDF-Page-Stripper" target="_blank" class="github-icon github-btn"><i class="fab fa-github"></i></a>
+        </h1> 
+        <p>Remove pages from incrementally built slides, keeping only the final/complete ones.</p>
+        <div class="input-group">
+            <input type="file" id="fileInput" accept=".pdf" multiple>
+            <p class="drag-drop-info">Or drag and drop PDF files here</p>
+            <div class="checkbox-group">
+                <input type="checkbox" id="compressPDF" checked>
+                <label for="compressPDF">Compress PDF (reduces file size)</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="wordComparisonMode" checked>
+                <label for="wordComparisonMode">Use word comparison mode (stricter, removes more pages)</label>
+            </div>
+        </div>
+        
+        <div class="button-group">
+            <button onclick="processFiles()">Process PDFs</button>
+            <button id="downloadBtn" onclick="downloadProcessedPDFs()" style="display: none;">Download Processed PDFs</button>
+        </div>
+
+        <div class="progress-bar" style="display: none;">
+            <span class="progress" style="width: 0%"></span>
+        </div>
+        <div id="pdfCreationStatus"></div>
+
+        <div id="output"></div>
+    </div>
+
+    <div id="infoModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeInfo()">&times;</span>
+            <h2>How it works</h2>
+            <ul>
+                <li>Extracts content from each PDF page</li>
+                <li>Compares current page with the previous page</li>
+                <li>Removes previous page if current page contains all its content</li>
+                <li>Choose between word and full text comparison modes</li>
+                <li>Processes multiple PDFs simultaneously</li>
+                <li>Downloads results as a ZIP file</li>
+            </ul>
+            <p>Note: This tool only compares text content. It does not analyze images or layouts.</p>
+        </div>
+    </div>
+
+    <div class="drag-drop-text">Drop PDF files here</div>
+
+    <script type="module" src="scripts.js"></script>
+</body>
+</html>

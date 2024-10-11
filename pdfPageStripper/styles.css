@@ -1,0 +1,308 @@
+/* styles.css */
+
+body {
+    font-family: 'Roboto', Arial, sans-serif;
+    line-height: 1.6;
+    color: #333;
+    background-color: #f0f0f0;
+    margin: 0;
+    padding: 0;
+    transition: background-color 0.3s ease;
+}
+
+.container {
+    max-width: 800px;
+    margin: 40px auto;
+    padding: 30px;
+    background-color: white;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    border-radius: 8px;
+}
+
+h1 {
+    font-size: 28px;
+    margin-bottom: 20px;
+    color: #2196F3;
+}
+
+h2 {
+    font-size: 22px;
+    margin-top: 30px;
+    margin-bottom: 15px;
+    color: #1976D2;
+}
+
+h3 {
+    font-size: 18px;
+    margin-top: 25px;
+    margin-bottom: 10px;
+    color: #0D47A1;
+}
+
+p {
+    margin-bottom: 15px;
+}
+
+.input-group {
+    margin-bottom: 25px;
+}
+
+.button-group {
+    margin-bottom: 20px;
+}
+
+.progress-bar {
+    margin-top: 20px;
+}
+
+/* Update the existing button styles */
+button {
+    background-color: #2196F3;
+    color: white;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    margin-right: 10px;
+    transition: background-color 0.3s ease;
+}
+
+button:hover {
+    background-color: #1976D2;
+}
+
+#pdfCreationStatus {
+    margin-top: 10px;
+    text-align: center;
+    font-style: italic;
+    color: #666;
+}
+
+
+
+.checkbox-group {
+    display: flex;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.checkbox-group label {
+    margin-left: 10px;
+    font-size: 16px;
+}
+
+#output {
+    margin-top: 30px;
+}
+
+.progress-bar {
+    width: 100%;
+    background-color: #e0e0e0;
+    padding: 3px;
+    border-radius: 3px;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, .2);
+    margin-bottom: 10px;
+}
+
+.progress {
+    display: block;
+    height: 22px;
+    background-color: #2196F3;
+    border-radius: 3px;
+    transition: width 500ms ease-in-out;
+}
+
+.results-summary {
+    display: flex;
+    justify-content: space-between;
+    background-color: #f5f5f5;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.results-summary div {
+    text-align: center;
+}
+
+.results-summary h3 {
+    margin: 0;
+    font-size: 14px;
+    color: #666;
+}
+
+.results-summary p {
+    margin: 5px 0 0;
+    font-size: 24px;
+    font-weight: bold;
+}
+
+.pages-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.page-chip {
+    padding: 8px 12px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.page-kept {
+    background-color: #c8e6c9;
+    color: #2e7d32;
+}
+
+.page-removed {
+    background-color: #ffcdd2;
+    color: #c62828;
+}
+
+
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.4);
+}
+
+.modal-content {
+    background-color: #fefefe;
+    margin: 15% auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%;
+    max-width: 600px;
+    border-radius: 8px;
+}
+
+.close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.close:hover,
+.close:focus {
+    color: black;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+/* Drag and drop styles */
+body.highlight {
+    background-color: #e3f2fd;
+}
+
+/* Add this to your existing styles.css file */
+
+.drag-drop-info {
+    font-size: 14px;
+    color: #666;
+    margin-top: 5px;
+    margin-bottom: 15px;
+    font-style: italic;
+}
+
+/* Update the existing .drag-drop-text style to make it more visible */
+.drag-drop-text {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 24px;
+    color: #2196F3;
+    text-align: center;
+    pointer-events: none;
+    background-color: rgba(255, 255, 255, 0.9);
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+body.highlight .drag-drop-text {
+    display: block;
+}
+
+/* Responsive design */
+@media (max-width: 600px) {
+    .container {
+        margin: 20px auto;
+        padding: 20px;
+    }
+
+    h1 {
+        font-size: 24px;
+    }
+
+    h2 {
+        font-size: 20px;
+    }
+
+    .results-summary {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .results-summary div {
+        margin-bottom: 15px;
+    }
+
+    .page-chip {
+        font-size: 12px;
+        padding: 6px 10px;
+    }
+}
+
+/* Accessibility improvements */
+button:focus,
+input:focus {
+    outline: 2px solid #2196F3;
+    outline-offset: 2px;
+}
+
+/* Additional styling for file input */
+input[type="file"] {
+    border: 2px solid #ddd;
+    padding: 10px;
+    border-radius: 4px;
+    width: 100%;
+    margin-bottom: 15px;
+}
+
+input[type="file"]:hover {
+    border-color: #2196F3;
+}
+
+/* GitHub icon styling */
+.github-icon {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    background-image: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>');
+    background-repeat: no-repeat;
+    background-size: contain;
+    vertical-align: middle;
+    margin-left: 10px;
+}
+
+.github-btn {
+    text-decoration: none;
+    color: #333;
+}
+
+.github-btn:hover {
+    text-decoration: underline;
+}
+

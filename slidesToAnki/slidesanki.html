@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Slides to Anki Deck Converter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/krmanik/genanki-js/dist/genanki.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+
+        #drop-area {
+            border: 2px dashed #007bff;
+            border-radius: 20px;
+            width: 100%;
+            padding: 20px;
+            text-align: center;
+            background-color: #fff;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        #drop-area.highlight {
+            border-color: #0056b3;
+            background-color: #e6f2ff;
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .button:hover {
+            background-color: #0056b3;
+        }
+
+        #generate-button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+            width: 100%;
+        }
+
+        #clear-files-button {
+            margin-top: 10px;
+            padding: 5px 10px;
+            font-size: 14px;
+            background-color: #6c757d;
+            width: auto;
+        }
+
+        #file-list {
+            margin-top: 20px;
+            background-color: #fff;
+            border-radius: 5px;
+            padding: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        #file-list h3 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        #file-list .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        #file-list .file-item:last-child {
+            border-bottom: none;
+        }
+
+        #file-list .remove-file {
+            color: #dc3545;
+            cursor: pointer;
+        }
+
+        #progress-area {
+            margin-top: 20px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            background-color: #e0e0e0;
+            padding: 3px;
+            border-radius: 3px;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, .2);
+        }
+
+        .progress-bar-fill {
+            display: block;
+            height: 22px;
+            background-color: #28a745;
+            border-radius: 3px;
+            transition: width 500ms ease-in-out;
+        }
+
+        #combine-slides {
+            margin-top: 10px;
+        }
+
+        #stats-area {
+            margin-top: 20px;
+            background-color: #fff;
+            border-radius: 5px;
+            padding: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        #stats-area ul {
+            list-style-type: none;
+            padding-left: 0;
+        }
+
+        #stats-area li {
+            margin-bottom: 5px;
+            padding: 5px;
+            background-color: #f8f9fa;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>PDF to Anki Deck Converter</h1>
+    <div id="drop-area">
+        <form class="my-form">
+            <p>Upload PDF files using the file dialog or by dragging and dropping them onto the dashed region</p>
+            <input type="file" id="file-input" multiple accept="application/pdf">
+            <label for="file-input" class="button">Select PDF files</label>
+        </form>
+    </div>
+    <div id="file-list"></div>
+    <button id="clear-files-button" class="button">Clear Selected Files</button>
+    <div id="combine-slides">
+        <input type="checkbox" id="combine-checkbox">
+        <label for="combine-checkbox">Combine slides with the same title into one card</label>
+    </div>
+    <button id="generate-button" disabled>Generate Anki Decks</button>
+    <div id="progress-area"></div>
+    <div id="stats-area"></div>
+
+    <script>
+
+        // The `initSqlJs` function is globally provided by all of the main dist files if loaded in the browser.
+        // We must specify this locateFile function if we are loading a wasm file from anywhere other than the current html page's folder.
+        config = {
+            locateFile: filename => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${filename}`
+        }
+
+        var SQL;
+        initSqlJs(config).then(function (sql) {
+            //Create the database
+            SQL = sql;
+        });
+        // Set up the necessary libraries
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+        // Initialize variables
+        let pdfs = [];
+        const dropArea = document.getElementById('drop-area');
+        const fileInput = document.getElementById('file-input');
+        const generateButton = document.getElementById('generate-button');
+        const fileList = document.getElementById('file-list');
+        const progressArea = document.getElementById('progress-area');
+        const statsArea = document.getElementById('stats-area');
+        const combineCheckbox = document.getElementById('combine-checkbox');
+        const clearFilesButton = document.getElementById('clear-files-button');
+
+        // Event listeners for drag and drop
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        // Handle dropped files
+        dropArea.addEventListener('drop', handleDrop, false);
+
+        // Handle selected files
+        fileInput.addEventListener('change', handleFiles, false);
+
+        // Handle generate button click
+        generateButton.addEventListener('click', generateAnkiDecks, false);
+
+        // Handle clear files button click
+        clearFilesButton.addEventListener('click', clearFiles, false);
+
+        // Prevent default drag behaviors
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        function highlight() {
+            dropArea.classList.add('highlight');
+        }
+
+        function unhighlight() {
+            dropArea.classList.remove('highlight');
+        }
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+
+        function handleFiles(filesOrEvent) {
+            let files;
+            if (filesOrEvent instanceof Event) {
+                files = filesOrEvent.target.files;
+            } else {
+                files = filesOrEvent;
+            }
+            pdfs = [...pdfs, ...Array.from(files)];
+            updateFileList();
+            generateButton.disabled = pdfs.length === 0;
+        }
+
+        function updateFileList() {
+            fileList.innerHTML = '<h3>Selected Files:</h3>';
+            pdfs.forEach((file, index) => {
+                const div = document.createElement('div');
+                div.className = 'file-item';
+                div.innerHTML = `
+            <span>${file.name}</span>
+            <span class="remove-file" data-index="${index}">&#10005;</span>
+        `;
+                fileList.appendChild(div);
+            });
+
+            // Add event listeners to remove buttons
+            document.querySelectorAll('.remove-file').forEach(button => {
+                button.addEventListener('click', function () {
+                    const index = parseInt(this.getAttribute('data-index'));
+                    pdfs.splice(index, 1);
+                    updateFileList();
+                    generateButton.disabled = pdfs.length === 0;
+                });
+            });
+        }
+
+        function clearFiles() {
+            pdfs = [];
+            updateFileList();
+            generateButton.disabled = true;
+        }
+
+        function updateProgress(message, percentage) {
+            progressArea.innerHTML = `
+        <p>${message}</p>
+        <div class="progress-bar">
+            <span class="progress-bar-fill" style="width: ${percentage}%;"></span>
+        </div>
+    `;
+        }
+
+        function updateStats(deckName, totalCards, cardStats) {
+            let statsHTML = `<h3>Stats for ${deckName}</h3>`;
+            statsHTML += `<p>Total cards: ${totalCards}</p>`;
+            statsHTML += `<h4>Card details:</h4>`;
+            statsHTML += `<ul>`;
+            for (const [title, imageCount] of cardStats) {
+                statsHTML += `<li>${title}: ${imageCount} image${imageCount !== 1 ? 's' : ''}</li>`;
+            }
+            statsHTML += `</ul>`;
+            statsArea.innerHTML += statsHTML;
+        }
+
+        async function generateAnkiDecks() {
+            updateProgress("Processing PDFs...", 0);
+            statsArea.innerHTML = ''; // Clear previous stats
+
+            for (let i = 0; i < pdfs.length; i++) {
+                const pdf = pdfs[i];
+                const pdfDoc = await pdfjsLib.getDocument(URL.createObjectURL(pdf)).promise;
+
+                // Create a model with an image field
+                var m = new Model({
+                    name: "Basic with Image",
+                    id: "1543634829844",
+                    flds: [
+                        { name: "Front" },
+                        { name: "Back" },
+                        { name: "Image" }
+                    ],
+                    req: [[0, "all", [0]]],
+                    tmpls: [
+                        {
+                            name: "Card 1",
+                            qfmt: "{{Front}}",
+                            afmt: "{{FrontSide}}<hr id=answer>{{Back}}<br>{{Image}}",
+                        }
+                    ],
+                });
+
+                // Create a deck for each PDF
+                const deckName = pdf.name.replace(/\.[^/.]+$/, "");
+                const deckId = Math.floor(Math.random() * 1000000000000) + 1;
+                var d = new Deck(deckId, deckName);
+
+                const mediaFiles = [];
+                const notes = new Map(); // Use a Map to store notes by title
+                const cardStats = new Map(); // Use a Map to store card stats
+
+                for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+                    const page = await pdfDoc.getPage(pageNum);
+                    const textContent = await page.getTextContent();
+
+                    // Remove empty texts and non-letter indexes
+                    var cleanedItems = textContent.items.filter(item => item.str.trim() !== '' && /[a-zA-Z]/.test(item.str));
+
+                    // Skip page if only one item left
+                    if (cleanedItems.length <= 1) {
+                        continue;
+                    }
+
+                    // Sort items by y-coordinate (topmost first)
+                    cleanedItems.sort((a, b) => b.transform[5] - a.transform[5]);
+           
+                    console.log(cleanedItems);
+
+                    // Fix umlauts, combine title text, and remove title indexes
+                    let titleText = '';
+                    const firstTransform = cleanedItems[0]?.transform?.[5];
+                    let titleParts = 0;
+                    for (let j = 0; j < cleanedItems.length; j++) {
+                        console.log(j);
+                        const item = cleanedItems[j];
+                        console.log(item);
+                        if (item.transform[5] === firstTransform && item.str.trim() !== '') {
+                            titleParts++;
+                            const currentChar = item.str.trim().toLowerCase();
+                            if (j < cleanedItems.length - 1 && cleanedItems[j + 1].str === '\u0308') {
+                                if (currentChar === 'a') titleText += 'ä';
+                                else if (currentChar === 'o') titleText += 'ö';
+                                else if (currentChar === 'u') titleText += 'ü';
+                                else titleText += item.str + cleanedItems[j + 1].str;
+                                j += 1; // Skip the combining diaeresis
+                            } else {
+                                if (currentChar === 'a\u0308') titleText += 'ä';
+                                else if (currentChar === 'o\u0308') titleText += 'ö';
+                                else if (currentChar === 'u\u0308') titleText += 'ü';
+                                else titleText += item.str;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+
+                    titleText = titleText.replace(" ̈a", 'ä').replace(" ̈o", 'ö').replace(" ̈u", 'ü');
+
+                    // Remove title indexes from cleanedItems
+                    cleanedItems.splice(0, titleParts);
+
+                    const header = titleText.trim();
+
+                    const scale = 2; // Increase scale for higher resolution
+                    const viewport = page.getViewport({ scale });
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    await page.render({ canvasContext: context, viewport }).promise;
+
+                    // Crop the image
+                    const croppedImage = cropWhitespace(canvas);
+
+                    const imageData = croppedImage.toDataURL('image/jpeg', 0.9);
+                    const imageName = `${titleText.replace(/[^a-zA-Z0-9]/g, '_')}_${i}_${pageNum}.jpg`;
+                    mediaFiles.push({ name: imageName, data: imageData });
+
+                    if (combineCheckbox.checked) {
+                        // Combine slides with the same title
+                        if (notes.has(header)) {
+                            // Append the image to the existing note
+                            const existingNote = notes.get(header);
+                            existingNote[2] += `<img src="${imageName}">`;
+                            cardStats.set(header, (cardStats.get(header) || 0) + 1);
+                        } else {
+                            // Create a new note
+                            notes.set(header, [header, '', `<img src="${imageName}">`]);
+                            cardStats.set(header, 1);
+                        }
+                    } else {
+                        // Create a separate note for each slide
+                        const noteKey = `${header}_${pageNum}`;
+                        notes.set(noteKey, [header, '', `<img src="${imageName}">`]);
+                        cardStats.set(noteKey, 1);
+                    }
+
+                    updateProgress(`Processing PDF ${i + 1} of ${pdfs.length}, page ${pageNum} of ${pdfDoc.numPages}`, (i / pdfs.length + pageNum / pdfDoc.numPages / pdfs.length) * 100);
+                }
+
+                // Add all notes to the deck
+                for (const note of notes.values()) {
+                    d.addNote(m.note(note));
+                }
+
+                updateProgress(`Creating Anki deck for ${deckName}...`, 90 + (i / pdfs.length) * 10);
+
+                // Create a package and add the deck
+                var p = new Package();
+                p.addDeck(d);
+
+                // Add the image files to the package
+                for (const file of mediaFiles) {
+                    const blob = dataURItoBlob(file.data);
+                    p.addMedia(blob, file.name);
+                }
+
+                // Generate the .apkg file
+                const apkgArrayBuffer = await p.writeToFile(`${deckName}.apkg`);
+
+                // Update stats
+                updateStats(deckName, notes.size, cardStats);
+            }
+
+            updateProgress("All Anki decks generated and downloaded!", 100);
+        }
+
+        function cropWhitespace(canvas) {
+            const ctx = canvas.getContext('2d');
+            const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const l = pixels.data.length;
+            const bound = {
+                top: null,
+                left: null,
+                right: null,
+                bottom: null
+            };
+            let x, y;
+
+            for (let i = 0; i < l; i += 4) {
+                if (pixels.data[i + 3] !== 0) {
+                    x = (i / 4) % canvas.width;
+                    y = ~~((i / 4) / canvas.width);
+
+                    if (bound.top === null) {
+                        bound.top = y;
+                    }
+
+                    if (bound.left === null) {
+                        bound.left = x;
+                    } else if (x < bound.left) {
+                        bound.left = x;
+                    }
+
+                    if (bound.right === null) {
+                        bound.right = x;
+                    } else if (bound.right < x) {
+                        bound.right = x;
+                    }
+
+                    if (bound.bottom === null) {
+                        bound.bottom = y;
+                    } else if (bound.bottom < y) {
+                        bound.bottom = y;
+                    }
+                }
+            }
+
+            // Check if cropping is necessary
+            if (bound.top === null || bound.left === null || bound.right === null || bound.bottom === null) {
+                return canvas; // Return original canvas if no non-transparent pixels found
+            }
+
+            const trimHeight = bound.bottom - bound.top + 1;
+            const trimWidth = bound.right - bound.left + 1;
+            const trimmed = ctx.getImageData(bound.left, bound.top, trimWidth, trimHeight);
+
+            const trimmedCanvas = document.createElement('canvas');
+            trimmedCanvas.width = trimWidth;
+            trimmedCanvas.height = trimHeight;
+            trimmedCanvas.getContext('2d').putImageData(trimmed, 0, 0);
+
+            return trimmedCanvas;
+        }
+
+        function dataURItoBlob(dataURI) {
+            const byteString = atob(dataURI.split(',')[1]);
+            const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let i = 0; i < byteString.length; i++) {
+                ia[i] = byteString.charCodeAt(i);
+            }
+            return new Blob([ab], { type: mimeString });
+        }
+
+        function showSnackbar(msg) {
+            var x = document.getElementById("snackbar");
+            x.innerHTML = msg;
+            x.className = "show";
+            setTimeout(function () { x.className = x.className.replace("show", ""); }, 3000);
+        }
+
+    </script>
+</body>
+
+</html>
