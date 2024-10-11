@@ -6,7 +6,7 @@ Note: Your PDF must have a table of contents/outline for this to work.
 
 ## Preview
 
-🔗 [Try it here](https://example.com/pdf-splitter)
+🔗 [Try it here](https://persie0.github.io/StudyTools/pdfSplitter/pdf-splitter.html)
 
 ## Features
 

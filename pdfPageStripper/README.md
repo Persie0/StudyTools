@@ -2,9 +2,9 @@
 
 Remove pages from incrementally built slides, keeping only the final/complete ones.
 
-[Live Demo](https://persie0.github.io/PDF-Page-Stripper/)
+[Live Demo](https://persie0.github.io/StudyTools/pdfPageStripper/stripper.html)
 
-<img src="images/screenshot.jpg" alt="PDF Page Stripper Screenshot" style="width: 600px; cursor: pointer;" onclick="window.open('https://persie0.github.io/PDF-Page-Stripper/')">
+<img src="images/screenshot.jpg" alt="PDF Page Stripper Screenshot" style="width: 600px; cursor: pointer;">
 
 ## Example
 The upper slide would get removed.

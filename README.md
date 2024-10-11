@@ -1,34 +1,47 @@
-# PDF Page Stripper
+# Study Tools
 
-Remove pages from incrementally built slides, keeping only the final/complete ones.
+A collection of browser-based PDF manipulation tools designed to enhance your study workflow. All tools work entirely in your browser - no server uploads required!
 
-[Live Demo](https://persie0.github.io/PDF-Page-Stripper/)
+## Table of Contents
+- [Available Tools](#available-tools)
+  - [PDF Chapter Splitter](#1-pdf-chapter-splitter)
+  - [PDF Slides to Anki Converter](#2-pdf-slides-to-anki-converter)
+  - [PDF Page Stripper](#3-pdf-page-stripper)
+- [Common Features](#features-common-to-all-tools)
+- [Privacy](#privacy)
+- [License](#license)
 
-<img src="images/screenshot.jpg" alt="PDF Page Stripper Screenshot" style="width: 600px; cursor: pointer;" onclick="window.open('https://persie0.github.io/PDF-Page-Stripper/')">
+## Available Tools
 
-## Example
-The upper slide would get removed.
+### 1. PDF Chapter Splitter
+Split large PDFs into smaller chapter-based files - perfect for working with AI tools that have token limits.
+- Automatic chapter detection from PDF outline
+- Adjustable splitting depth
+- Results delivered as ZIP file
+- [Try PDF Chapter Splitter](./pdfSplitter/pdf-splitter.html)
 
+### 2. PDF Slides to Anki Converter
+Transform your PDF presentations into Anki flashcards automatically.
+- Creates cards with slide title as front and full slide as back
+- Option to merge slides with identical titles
+- Real-time progress tracking
+- [Try Slides to Anki Converter](./slidesToAnki/slidesanki.html)
 
-<img src="images/example.jpg" alt="PDF Page Stripper Example" style="width: 370px; cursor: pointer;">
+### 3. PDF Page Stripper
+Clean up incrementally built presentation slides by removing intermediate steps.
+- Keeps only final/complete slides
+- Multiple comparison modes
+- Batch processing support
+- [Try PDF Page Stripper](./pdfPageStripper/stripper.html)
 
-## How It Works
+## Features Common to All Tools
+- Drag & drop file upload
+- Complete browser-based processing
+- No server uploads - your files remain private
+- Modern, easy-to-use interfaces
 
-1. Extracts text from each page of the PDFs.
-2. Compares each page with the one before it.
-3. Removes the previous page if the current one contains all its text.
-4. Retains only the relevant, non-duplicate pages in the final PDFs.
+## Privacy
+All processing happens directly in your browser. Your files are never uploaded to any server, ensuring complete privacy and data security.
 
-## Comparison Mode:
-  - **Word Comparison**: Strips more pages by comparing at the word level.
-  - **Full Text Comparison**: Strips fewer pages by comparing entire text of the page.
-  
-## Additional Features
-
-- Process multiple PDFs simultaneously.
-- Drag and drop support for easy file uploading.
-
-
-## Inspiration
-
-This project was inspired by [pdf-page-stripper](https://github.com/fsinf/pdf-page-stripper), which I highly recommend for any tasks other than removing incrementally built slides.
+## License
+MIT License

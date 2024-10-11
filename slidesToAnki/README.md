@@ -4,7 +4,7 @@ Convert PDF presentations into Anki decks for easy studying.
 
 ## Live Demo
 
-Try it out: [https://persie0.github.io/pdf-slides-to-anki/](https://persie0.github.io/pdf-slides-to-anki/)
+Try it out: [here](https://persie0.github.io/StudyTools/slidesToAnki/slidesanki.html)
 
 ## Features
 

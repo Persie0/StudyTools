@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Study Tools - PDF Processing Suite</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .quick-links {
+            text-align: center;
+            padding: 1rem;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+        }
+        .quick-links a {
+            display: inline-block;
+            padding: 8px 16px;
+            margin: 0 10px;
+            background-color: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 0.9rem;
+        }
+        .quick-links a:hover {
+            background-color: #2980b9;
+        }
+        .tool-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            background-color: #fff;
+            transition: transform 0.2s;
+        }
+        .tool-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .usage-details {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        .usage-details.expanded {
+            max-height: 500px;
+            padding: 15px;
+        }
+        .usage-toggle {
+            background-color: #e9ecef;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+            font-size: 0.9rem;
+        }
+        .usage-toggle:hover {
+            background-color: #dee2e6;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        h2 {
+            color: #34495e;
+            margin-bottom: 1rem;
+        }
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background-color 0.2s;
+        }
+        .btn:hover {
+            background-color: #2980b9;
+        }
+        .features {
+            margin-top: 10px;
+            padding-left: 20px;
+        }
+        .privacy-notice {
+            margin-top: 2rem;
+            padding: 1rem;
+            background-color: #e8f4f8;
+            border-radius: 5px;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PDF Study Tools</h1>
+        
+        <div class="quick-links">
+            <a href="./pdfSplitter/pdf-splitter.html">Chapter Splitter</a>
+            <a href="./slidesToAnki/slidesanki.html">Slides to Anki</a>
+            <a href="./pdfPageStripper/stripper.html">Page Stripper</a>
+        </div>
+
+        <div class="tool-card">
+            <h2>PDF Chapter Splitter</h2>
+            <p>Split large PDFs into smaller chapter-based files - perfect for working with AI tools that have token limits.</p>
+            <ul class="features">
+                <li>Automatic chapter detection</li>
+                <li>Adjustable splitting depth</li>
+                <li>Download results as ZIP</li>
+            </ul>
+            <button class="usage-toggle" onclick="toggleUsage('chapter-splitter-usage')">Show Usage</button>
+            <div id="chapter-splitter-usage" class="usage-details">
+                <h3>How to Use:</h3>
+                <ol>
+                    <li>Upload your PDF using drag & drop or file dialog</li>
+                    <li>Choose how deep you want to split (main chapters only, include subchapters, etc.)</li>
+                    <li>Click "Split PDF"</li>
+                    <li>Download your ZIP file containing individual chapter PDFs</li>
+                    <li>Use these smaller PDFs with AI tools that have token limits</li>
+                </ol>
+                <p><strong>Note:</strong> Your PDF must have a table of contents/outline for splitting to work.</p>
+            </div>
+            <a href="./pdfSplitter/pdf-splitter.html" class="btn">Try Chapter Splitter</a>
+        </div>
+
+        <div class="tool-card">
+            <h2>PDF Slides to Anki Converter</h2>
+            <p>Transform your PDF presentations into Anki flashcards automatically.</p>
+            <ul class="features">
+                <li>Automatic card creation from slides</li>
+                <li>Merge similar slides option</li>
+                <li>Progress tracking</li>
+            </ul>
+            <button class="usage-toggle" onclick="toggleUsage('slides-anki-usage')">Show Usage</button>
+            <div id="slides-anki-usage" class="usage-details">
+                <h3>How to Use:</h3>
+                <ol>
+                    <li>Upload your presentation PDF</li>
+                    <li>Choose whether to combine slides with the same title</li>
+                    <li>Wait for processing to complete</li>
+                    <li>Download your Anki deck with:
+                        <ul>
+                            <li>Front: Top text from each slide</li>
+                            <li>Back: Full slide image</li>
+                        </ul>
+                    </li>
+                    <li>Import the deck into Anki</li>
+                </ol>
+            </div>
+            <a href="./slidesToAnki/slidesanki.html" class="btn">Try Slides to Anki</a>
+        </div>
+
+        <div class="tool-card">
+            <h2>PDF Page Stripper</h2>
+            <p>Clean up incrementally built presentation slides by removing intermediate steps.</p>
+            <ul class="features">
+                <li>Multiple comparison modes</li>
+                <li>Batch processing</li>
+                <li>Keeps only final slides</li>
+            </ul>
+            <button class="usage-toggle" onclick="toggleUsage('page-stripper-usage')">Show Usage</button>
+            <div id="page-stripper-usage" class="usage-details">
+                <h3>How to Use:</h3>
+                <ol>
+                    <li>Upload your presentation PDF(s)</li>
+                    <li>Choose comparison mode:
+                        <ul>
+                            <li><strong>Word Comparison:</strong> Strips more pages by comparing at word level</li>
+                            <li><strong>Full Text Comparison:</strong> More conservative, compares entire text</li>
+                        </ul>
+                    </li>
+                    <li>Process files</li>
+                    <li>Download clean PDFs with only final slides</li>
+                </ol>
+                <p><strong>Best for:</strong> Presentations with step-by-step slide builds or animations</p>
+            </div>
+            <a href="./pdfPageStripper/stripper.html" class="btn">Try Page Stripper</a>
+        </div>
+
+        <div class="privacy-notice">
+            <strong>Privacy Notice:</strong> All tools process files directly in your browser. Your files are never uploaded to any server, ensuring complete privacy and data security.
+        </div>
+    </div>
+
+    <script>
+        function toggleUsage(id) {
+            const element = document.getElementById(id);
+            element.classList.toggle('expanded');
+            const button = element.previousElementSibling;
+            button.textContent = element.classList.contains('expanded') ? 'Hide Usage' : 'Show Usage';
+        }
+    </script>
+</body>
+</html>
