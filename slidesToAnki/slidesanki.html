@@ -10,164 +10,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
-
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f0f0f0;
-        }
-
-        h1 {
-            text-align: center;
-            color: #333;
-        }
-
-        #drop-area {
-            border: 2px dashed #007bff;
-            border-radius: 20px;
-            width: 100%;
-            padding: 20px;
-            text-align: center;
-            background-color: #fff;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-        }
-
-        #drop-area.highlight {
-            border-color: #0056b3;
-            background-color: #e6f2ff;
-        }
-
-        #file-input {
-            display: none;
-        }
-
-        .button {
-            display: inline-block;
-            padding: 10px 20px;
-            background-color: #007bff;
-            color: white;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-
-        .button:hover {
-            background-color: #0056b3;
-        }
-
-        #generate-button {
-            margin-top: 20px;
-            padding: 10px 20px;
-            font-size: 16px;
-            width: 100%;
-        }
-
-        #clear-files-button {
-            margin-top: 10px;
-            padding: 5px 10px;
-            font-size: 14px;
-            background-color: #6c757d;
-            width: auto;
-        }
-
-        #file-list {
-            margin-top: 20px;
-            background-color: #fff;
-            border-radius: 5px;
-            padding: 10px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-        }
-
-        #file-list h3 {
-            margin-top: 0;
-            color: #333;
-        }
-
-        #file-list .file-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 5px 0;
-            border-bottom: 1px solid #eee;
-        }
-
-        #file-list .file-item:last-child {
-            border-bottom: none;
-        }
-
-        #file-list .remove-file {
-            color: #dc3545;
-            cursor: pointer;
-        }
-
-        #progress-area {
-            margin-top: 20px;
-        }
-
-        .progress-bar {
-            width: 100%;
-            background-color: #e0e0e0;
-            padding: 3px;
-            border-radius: 3px;
-            box-shadow: inset 0 1px 3px rgba(0, 0, 0, .2);
-        }
-
-        .progress-bar-fill {
-            display: block;
-            height: 22px;
-            background-color: #28a745;
-            border-radius: 3px;
-            transition: width 500ms ease-in-out;
-        }
-
-        #combine-slides {
-            margin-top: 10px;
-        }
-
-        #stats-area {
-            margin-top: 20px;
-            background-color: #fff;
-            border-radius: 5px;
-            padding: 10px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-        }
-
-        #stats-area ul {
-            list-style-type: none;
-            padding-left: 0;
-        }
-
-        #stats-area li {
-            margin-bottom: 5px;
-            padding: 5px;
-            background-color: #f8f9fa;
-            border-radius: 3px;
-        }
-
-        .github-icon {
-    display: inline-block;
-    width: 24px;
-    height: 24px;
-    background-image: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>');
-    background-repeat: no-repeat;
-    background-size: contain;
-    vertical-align: middle;
-    margin-left: 10px;
-}
-
-.github-btn {
-    text-decoration: none;
-    color: #333;
-}
-
-.github-btn:hover {
-    text-decoration: underline;
-}
-    </style>
+    <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
@@ -183,15 +26,27 @@
     <div id="file-list"></div>
     <button id="clear-files-button" class="button">Clear Selected Files</button>
     <div id="combine-slides">
-        <input type="checkbox" id="combine-checkbox">
+        <input type="checkbox" id="combine-checkbox" checked>
         <label for="combine-checkbox">Combine slides with the same title into one card</label>
+    </div>
+    <div id="combine-similar">
+        <input type="checkbox" id="combine-similar-checkbox">
+        <label for="combine-similar-checkbox">Combine slides with similar titles (current title starts with previous title, or previous title followed by ':')</label>
+    </div>
+    <div id="remove-incremental">
+        <input type="checkbox" id="remove-incremental-checkbox" checked>
+        <label for="remove-incremental-checkbox">Remove incremental slides</label>
     </div>
     <button id="generate-button" disabled>Generate Anki Decks</button>
     <div id="progress-area"></div>
     <div id="stats-area"></div>
+    <div id="edit-area" style="display: none;">
+        <h3>Edit slides:</h3>
+        <div id="edit-container" class="edit-container"></div>
+    </div>
+    <div id="download-area"></div>
 
     <script>
-
         // The `initSqlJs` function is globally provided by all of the main dist files if loaded in the browser.
         // We must specify this locateFile function if we are loading a wasm file from anywhere other than the current html page's folder.
         config = {
@@ -215,7 +70,12 @@
         const progressArea = document.getElementById('progress-area');
         const statsArea = document.getElementById('stats-area');
         const combineCheckbox = document.getElementById('combine-checkbox');
+        const combineSimilarCheckbox = document.getElementById('combine-similar-checkbox');
+        const removeIncrementalCheckbox = document.getElementById('remove-incremental-checkbox');
         const clearFilesButton = document.getElementById('clear-files-button');
+        const editContainer = document.getElementById('edit-container');
+        const editArea = document.getElementById('edit-area');
+        const downloadArea = document.getElementById('download-area');
 
         // Event listeners for drag and drop
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -328,6 +188,7 @@
         async function generateAnkiDecks() {
             updateProgress("Processing PDFs...", 0);
             statsArea.innerHTML = ''; // Clear previous stats
+            downloadArea.innerHTML = ''; // Clear previous download links
 
             for (let i = 0; i < pdfs.length; i++) {
                 const pdf = pdfs[i];
@@ -357,9 +218,11 @@
                 const deckId = Math.floor(Math.random() * 1000000000000) + 1;
                 var d = new Deck(deckId, deckName);
 
-                const mediaFiles = [];
                 const notes = new Map(); // Use a Map to store notes by title
                 const cardStats = new Map(); // Use a Map to store card stats
+
+                let previousSlideContent = '';
+                let previousTitle = '';
 
                 for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
                     const page = await pdfDoc.getPage(pageNum);
@@ -375,17 +238,13 @@
 
                     // Sort items by y-coordinate (topmost first)
                     cleanedItems.sort((a, b) => b.transform[5] - a.transform[5]);
-           
-                    console.log(cleanedItems);
 
                     // Fix umlauts, combine title text, and remove title indexes
                     let titleText = '';
                     const firstTransform = cleanedItems[0]?.transform?.[5];
                     let titleParts = 0;
                     for (let j = 0; j < cleanedItems.length; j++) {
-                        console.log(j);
                         const item = cleanedItems[j];
-                        console.log(item);
                         if (item.transform[5] === firstTransform && item.str.trim() !== '') {
                             titleParts++;
                             const currentChar = item.str.trim().toLowerCase();
@@ -426,34 +285,48 @@
                     const croppedImage = cropWhitespace(canvas);
 
                     const imageData = croppedImage.toDataURL('image/jpeg', 0.9);
-                    const imageName = `${titleText.replace(/[^a-zA-Z0-9]/g, '_')}_${i}_${pageNum}.jpg`;
-                    mediaFiles.push({ name: imageName, data: imageData });
 
-                    if (combineCheckbox.checked) {
-                        // Combine slides with the same title
-                        if (notes.has(header)) {
+                    // Check if we should skip this slide (incremental)
+                    const currentSlideContent = cleanedItems.map(item => item.str).join(' ');
+                    if (removeIncrementalCheckbox.checked && includesContent(currentSlideContent, previousSlideContent)) {
+                        continue;
+                    }
+                    previousSlideContent = currentSlideContent;
+
+                    let noteKey = header;
+                    if (combineSimilarCheckbox.checked) {
+                        const words = header.split(' ');
+                        if (words.length >= 1 && (previousTitle.startsWith(words[0]) || header.startsWith(previousTitle) || header === previousTitle + ':')) {
+                            noteKey = previousTitle;
+                        }
+                    }
+
+                    if (combineCheckbox.checked || combineSimilarCheckbox.checked) {
+                        if (notes.has(noteKey)) {
                             // Append the image to the existing note
-                            const existingNote = notes.get(header);
-                            existingNote[2] += `<img src="${imageName}">`;
-                            cardStats.set(header, (cardStats.get(header) || 0) + 1);
+                            const existingNote = notes.get(noteKey);
+                            existingNote[2] += `<img src="${imageData}" style="margin-bottom: 20px;">`;
+                            cardStats.set(noteKey, (cardStats.get(noteKey) || 0) + 1);
                         } else {
                             // Create a new note
-                            notes.set(header, [header, '', `<img src="${imageName}">`]);
-                            cardStats.set(header, 1);
+                            notes.set(noteKey, [header, '', `<img src="${imageData}" style="margin-bottom: 20px;">`]);
+                            cardStats.set(noteKey, 1);
                         }
                     } else {
                         // Create a separate note for each slide
-                        const noteKey = `${header}_${pageNum}`;
-                        notes.set(noteKey, [header, '', `<img src="${imageName}">`]);
-                        cardStats.set(noteKey, 1);
+                        const uniqueNoteKey = `${header}_${pageNum}`;
+                        notes.set(uniqueNoteKey, [header, '', `<img src="${imageData}" style="margin-bottom: 20px;">`]);
+                        cardStats.set(uniqueNoteKey, 1);
                     }
+
+                    previousTitle = header;
 
                     updateProgress(`Processing PDF ${i + 1} of ${pdfs.length}, page ${pageNum} of ${pdfDoc.numPages}`, (i / pdfs.length + pageNum / pdfDoc.numPages / pdfs.length) * 100);
                 }
 
                 // Add all notes to the deck
-                for (const note of notes.values()) {
-                    d.addNote(m.note(note));
+                for (const [header, , imageHtml] of notes.values()) {
+                    d.addNote(m.note([header, '', imageHtml]));
                 }
 
                 updateProgress(`Creating Anki deck for ${deckName}...`, 90 + (i / pdfs.length) * 10);
@@ -462,20 +335,24 @@
                 var p = new Package();
                 p.addDeck(d);
 
-                // Add the image files to the package
-                for (const file of mediaFiles) {
-                    const blob = dataURItoBlob(file.data);
-                    p.addMedia(blob, file.name);
-                }
-
                 // Generate the .apkg file
                 const apkgArrayBuffer = await p.writeToFile(`${deckName}.apkg`);
+
+                // Create download link
+                const blob = new Blob([apkgArrayBuffer], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                const downloadLink = document.createElement('a');
+                downloadLink.href = url;
+                downloadLink.download = `${deckName}.apkg`;
+                downloadLink.textContent = `Download ${deckName}.apkg`;
+                downloadArea.appendChild(downloadLink);
+                downloadArea.appendChild(document.createElement('br'));
 
                 // Update stats
                 updateStats(deckName, notes.size, cardStats);
             }
 
-            updateProgress("All Anki decks generated and downloaded!", 100);
+            updateProgress("All Anki decks generated!", 100);
         }
 
         function cropWhitespace(canvas) {
@@ -536,22 +413,22 @@
             return trimmedCanvas;
         }
 
-        function dataURItoBlob(dataURI) {
-            const byteString = atob(dataURI.split(',')[1]);
-            const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
-            const ab = new ArrayBuffer(byteString.length);
-            const ia = new Uint8Array(ab);
-            for (let i = 0; i < byteString.length; i++) {
-                ia[i] = byteString.charCodeAt(i);
-            }
-            return new Blob([ab], { type: mimeString });
-        }
-
         function showSnackbar(msg) {
             var x = document.getElementById("snackbar");
             x.innerHTML = msg;
             x.className = "show";
             setTimeout(function () { x.className = x.className.replace("show", ""); }, 3000);
+        }
+
+        function includesContent(currentText, previousText) {
+            const currentWords = new Set(currentText.toLowerCase().split(/\s+/));
+            const previousWords = new Set(previousText.toLowerCase().split(/\s+/));
+            for (let word of previousWords) {
+                if (!currentWords.has(word)) {
+                    return false;
+                }
+            }
+            return true;
         }
 
     </script>
