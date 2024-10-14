@@ -206,14 +206,14 @@
                     flds: [
                         { name: "Front" },
                         { name: "Image" },
-                        { name: "Back" }
+                        { name: "Back" },
                     ],
                     req: [[0, "all", [0]]],
                     tmpls: [
                         {
                             name: "Card 1",
                             qfmt: "{{Front}}",
-                            afmt: "{{FrontSide}}<hr id=answer>{{Back}}<br>{{Image}}",
+                            afmt: "{{FrontSide}}<hr id=answer>{{Image}}",
                         }
                     ],
                 });
@@ -314,20 +314,20 @@
                         if (notes.has(noteKey)) {
                             // Append the image to the existing note
                             const existingNote = notes.get(noteKey);
-                            existingNote[2] += `<img src="${imageData}">`;
+                            existingNote[1] += `<img src="${imageData}">`;
                             if (includeTextCheckbox.checked) {
-                                existingNote[1] += `<br>${currentSlideContent}`;
+                                existingNote[2] += `<br>${currentSlideContent}`;
                             }
                             cardStats.set(noteKey, (cardStats.get(noteKey) || 0) + 1);
                         } else {
                             // Create a new note
-                            notes.set(noteKey, [header, includeTextCheckbox.checked ? currentSlideContent : '', `<img src="${imageData}">`]);
+                            notes.set(noteKey, [header, `<img src="${imageData}">`, includeTextCheckbox.checked ? currentSlideContent : '']);
                             cardStats.set(noteKey, 1);
                         }
                     } else {
                         // Create a separate note for each slide
                         const uniqueNoteKey = `${pageNum}_${header}`;
-                        notes.set(uniqueNoteKey, [header, includeTextCheckbox.checked ? currentSlideContent : '', `<img src="${imageData}">`]);
+                        notes.set(uniqueNoteKey, [header, `<img src="${imageData}">`, includeTextCheckbox.checked ? currentSlideContent : '']);
                         cardStats.set(uniqueNoteKey, 1);
                     }
 
@@ -343,8 +343,8 @@
                     return pageA - pageB;
                 });
 
-                for (const [, [header, back, imageHtml]] of sortedNotes) {
-                    d.addNote(m.note([header, back, imageHtml]));
+                for (const [, [header, imageHtml, back]] of sortedNotes) {
+                    d.addNote(m.note([header, imageHtml, back]));
                 }
 
                 updateProgress(`Creating Anki deck for ${deckName}...`, 90 + (i / pdfs.length) * 10);
