@@ -281,19 +281,16 @@
                     );
                     const pages = await newPdf.copyPages(pdfDoc, pageIndices);
 
-                    // Remove pages with no text
-                    const nonEmptyPages = await Promise.all(pages.map(async (page) => {
-                        // Use PDFLib's built-in method to check for text content
-                        const text = await page.doc.getPage(page.ref).getTextContent();
-                        return text.items.length > 0 ? page : null;
-                    }));
+                    // Remove empty pages
+                    const nonEmptyPages = pages.filter(page => {
+                        const { width, height } = page.getSize();
+                        return width !== 0 && height !== 0;
+                    });
 
-                    const filteredPages = nonEmptyPages.filter(page => page !== null);
-                    
+                    nonEmptyPages.forEach(page => newPdf.addPage(page));
+
                     // Only create PDF for chapters with non-zero length
-                    if (filteredPages.length > 0) {
-                        filteredPages.forEach(page => newPdf.addPage(page));
-
+                    if (nonEmptyPages.length > 0) {
                         const chapterPdfBytes = await newPdf.save({ useObjectStreams: false });
 
                         const filename = `${String(i + 1).padStart(2, '0')}_${sanitizeFilename(chapter.title)}.pdf`;
