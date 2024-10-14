@@ -287,7 +287,8 @@
                         if (width === 0 || height === 0) {
                             return null;
                         }
-                        const text = await page.getTextContent();
+                        // Use PDFLib's built-in method to check for text content
+                        const text = await page.doc.getPage(page.ref).getTextContent();
                         return text.items.length > 0 ? page : null;
                     }));
 
