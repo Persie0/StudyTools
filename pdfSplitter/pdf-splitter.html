@@ -275,26 +275,34 @@
                     const startPage = chapter.startPage;
                     const endPage = i < chapters.length - 1 ? chapters[i + 1].startPage - 1 : chapter.endPage;
                     console.log(`Chapter: ${chapter.title} has start page: ${startPage} and end page: ${endPage}`);
+                    const pageIndices = Array.from(
+                        { length: endPage - startPage + 1 },
+                        (_, i) => startPage - 1 + i
+                    );
+                    const pages = await newPdf.copyPages(pdfDoc, pageIndices);
+
+                    // Remove pages with no text
+                    const nonEmptyPages = await Promise.all(pages.map(async (page) => {
+                        // Use PDFLib's built-in method to check for text content
+                        const text = await page.doc.getPage(page.ref).getTextContent();
+                        return text.items.length > 0 ? page : null;
+                    }));
+
+                    const filteredPages = nonEmptyPages.filter(page => page !== null);
                     
-                    if (startPage === endPage) {
-                        const pageIndices = [startPage - 1];
-                        const pages = await newPdf.copyPages(pdfDoc, pageIndices);
-                        pages.forEach(page => newPdf.addPage(page));
+                    // Only create PDF for chapters with non-zero length
+                    if (filteredPages.length > 0) {
+                        filteredPages.forEach(page => newPdf.addPage(page));
+
+                        const chapterPdfBytes = await newPdf.save({ useObjectStreams: false });
+
+                        const filename = `${String(i + 1).padStart(2, '0')}_${sanitizeFilename(chapter.title)}.pdf`;
+                        zip.file(filename, chapterPdfBytes);
+
+                        console.log(`Chapter ${i + 1} processed:`, chapter);
                     } else {
-                        const pageIndices = Array.from(
-                            { length: endPage - startPage + 1 },
-                            (_, i) => startPage - 1 + i
-                        );
-                        const pages = await newPdf.copyPages(pdfDoc, pageIndices);
-                        pages.forEach(page => newPdf.addPage(page));
+                        console.log(`Skipping empty chapter ${i + 1}: ${chapter.title}`);
                     }
-
-                    const chapterPdfBytes = await newPdf.save({ useObjectStreams: false });
-
-                    const filename = `${String(i + 1).padStart(2, '0')}_${sanitizeFilename(chapter.title)}.pdf`;
-                    zip.file(filename, chapterPdfBytes);
-
-                    console.log(`Chapter ${i + 1} processed:`, chapter);
                 }
 
                 statusDiv.textContent = 'Creating download file...';
