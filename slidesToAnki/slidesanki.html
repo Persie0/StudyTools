@@ -38,8 +38,8 @@
         <label for="remove-incremental-checkbox">Remove incremental slides</label>
     </div>
     <div id="include-text">
-        <input type="checkbox" id="include-text-checkbox">
-        <label for="include-text-checkbox">Include page text as back field</label>
+        <input type="checkbox" id="include-text-checkbox" checked>
+        <label for="include-text-checkbox">Include page text as back field (to make images searchable)</label>
     </div>
     <button id="generate-button" disabled>Generate Anki Decks</button>
     <div id="progress-area"></div>
@@ -205,8 +205,8 @@
                     id: "1543634829844",
                     flds: [
                         { name: "Front" },
-                        { name: "Back" },
-                        { name: "Image" }
+                        { name: "Image" },
+                        { name: "Back" }
                     ],
                     req: [[0, "all", [0]]],
                     tmpls: [
