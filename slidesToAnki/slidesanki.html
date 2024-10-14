@@ -37,6 +37,10 @@
         <input type="checkbox" id="remove-incremental-checkbox" checked>
         <label for="remove-incremental-checkbox">Remove incremental slides</label>
     </div>
+    <div id="include-text">
+        <input type="checkbox" id="include-text-checkbox">
+        <label for="include-text-checkbox">Include page text as back field</label>
+    </div>
     <button id="generate-button" disabled>Generate Anki Decks</button>
     <div id="progress-area"></div>
     <div id="stats-area"></div>
@@ -72,6 +76,7 @@
         const combineCheckbox = document.getElementById('combine-checkbox');
         const combineSimilarCheckbox = document.getElementById('combine-similar-checkbox');
         const removeIncrementalCheckbox = document.getElementById('remove-incremental-checkbox');
+        const includeTextCheckbox = document.getElementById('include-text-checkbox');
         const clearFilesButton = document.getElementById('clear-files-button');
         const editContainer = document.getElementById('edit-container');
         const editArea = document.getElementById('edit-area');
@@ -208,7 +213,7 @@
                         {
                             name: "Card 1",
                             qfmt: "{{Front}}",
-                            afmt: "{{FrontSide}}<hr id=answer>{{Image}}",
+                            afmt: "{{FrontSide}}<hr id=answer>{{Back}}<br>{{Image}}",
                         }
                     ],
                 });
@@ -310,16 +315,19 @@
                             // Append the image to the existing note
                             const existingNote = notes.get(noteKey);
                             existingNote[2] += `<img src="${imageData}">`;
+                            if (includeTextCheckbox.checked) {
+                                existingNote[1] += `<br>${currentSlideContent}`;
+                            }
                             cardStats.set(noteKey, (cardStats.get(noteKey) || 0) + 1);
                         } else {
                             // Create a new note
-                            notes.set(noteKey, [header, currentSlideContent, `<img src="${imageData}">`]);
+                            notes.set(noteKey, [header, includeTextCheckbox.checked ? currentSlideContent : '', `<img src="${imageData}">`]);
                             cardStats.set(noteKey, 1);
                         }
                     } else {
                         // Create a separate note for each slide
                         const uniqueNoteKey = `${pageNum}_${header}`;
-                        notes.set(uniqueNoteKey, [header, currentSlideContent, `<img src="${imageData}">`]);
+                        notes.set(uniqueNoteKey, [header, includeTextCheckbox.checked ? currentSlideContent : '', `<img src="${imageData}">`]);
                         cardStats.set(uniqueNoteKey, 1);
                     }
 
