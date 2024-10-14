@@ -205,15 +205,15 @@
                     id: "1543634829844",
                     flds: [
                         { name: "Front" },
-                        { name: "Image" },
                         { name: "Back" },
+                        { name: "Text" },
                     ],
                     req: [[0, "all", [0]]],
                     tmpls: [
                         {
                             name: "Card 1",
                             qfmt: "{{Front}}",
-                            afmt: "{{FrontSide}}<hr id=answer>{{Image}}",
+                            afmt: "{{FrontSide}}<hr id=answer>{{Back}}",
                         }
                     ],
                 });
@@ -343,8 +343,8 @@
                     return pageA - pageB;
                 });
 
-                for (const [, [header, imageHtml, back]] of sortedNotes) {
-                    d.addNote(m.note([header, imageHtml, back]));
+                for (const [, [header, imageHtml, text]] of sortedNotes) {
+                    d.addNote(m.note([header, imageHtml, text]));
                 }
 
                 updateProgress(`Creating Anki deck for ${deckName}...`, 90 + (i / pdfs.length) * 10);
