@@ -14,7 +14,8 @@
 </head>
 
 <body>
-    <h1>PDF to Anki Deck Converter<a href="https://github.com/Persie0/StudyTools/tree/main/slidesToAnki#readme" target="_blank" class="github-icon github-btn"><i class="fab fa-github"></i></a>
+    <h1>PDF to Anki Deck Converter<a href="https://github.com/Persie0/StudyTools/tree/main/slidesToAnki#readme"
+            target="_blank" class="github-icon github-btn"><i class="fab fa-github"></i></a>
     </h1>
     <div id="drop-area">
         <form class="my-form">
@@ -31,7 +32,8 @@
     </div>
     <div id="combine-similar">
         <input type="checkbox" id="combine-similar-checkbox">
-        <label for="combine-similar-checkbox">Combine slides with similar titles (current title starts with previous title, or previous title followed by ':')</label>
+        <label for="combine-similar-checkbox">Combine slides with similar titles (current title starts with previous
+            title, or previous title followed by ':')</label>
     </div>
     <div id="remove-incremental">
         <input type="checkbox" id="remove-incremental-checkbox" checked>
@@ -218,6 +220,14 @@
                         }
                     ],
                     css: `
+                    .card {
+    font-family: arial;
+    font-size: 20px;
+    text-align: center;
+    color: black;
+    background-color: white;
+}
+
                         .back-content {
                             font-size: 16px; /* Adjust the font size as needed */
                             text-align: center;
