@@ -206,6 +206,7 @@
                     flds: [
                         { name: "Front" },
                         { name: "Back" },
+                        { name: "BackContent" },
                         { name: "Text" },
                     ],
                     req: [[0, "all", [0]]],
@@ -213,9 +214,21 @@
                         {
                             name: "Card 1",
                             qfmt: "{{Front}}",
-                            afmt: "{{FrontSide}}<hr id=answer>{{Back}}",
+                            afmt: "{{FrontSide}}<hr id=answer>{{Back}}<div class=\"back-content\">{{BackContent}}</div>",
                         }
                     ],
+                    css: `
+                        .back-content {
+                            font-size: 16px; /* Adjust the font size as needed */
+                            text-align: center;
+                            width: 100%;
+                            line-height: 1.6; 
+                        }
+
+                        h2 {
+                            display: inline; /* Display as inline to remove extra space */
+                        }
+                    `,
                 });
 
                 // Create a deck for each PDF
@@ -316,18 +329,18 @@
                             const existingNote = notes.get(noteKey);
                             existingNote[1] += `<img src="${imageData}">`;
                             if (includeTextCheckbox.checked) {
-                                existingNote[2] += `<br>${currentSlideContent}`;
+                                existingNote[3] += `<br>${currentSlideContent}`;
                             }
                             cardStats.set(noteKey, (cardStats.get(noteKey) || 0) + 1);
                         } else {
                             // Create a new note
-                            notes.set(noteKey, [header, `<img src="${imageData}">`, includeTextCheckbox.checked ? currentSlideContent : '']);
+                            notes.set(noteKey, [header, `<img src="${imageData}">`, '', includeTextCheckbox.checked ? currentSlideContent : '']);
                             cardStats.set(noteKey, 1);
                         }
                     } else {
                         // Create a separate note for each slide
                         const uniqueNoteKey = `${pageNum}_${header}`;
-                        notes.set(uniqueNoteKey, [header, `<img src="${imageData}">`, includeTextCheckbox.checked ? currentSlideContent : '']);
+                        notes.set(uniqueNoteKey, [header, `<img src="${imageData}">`, '', includeTextCheckbox.checked ? currentSlideContent : '']);
                         cardStats.set(uniqueNoteKey, 1);
                     }
 
@@ -343,8 +356,8 @@
                     return pageA - pageB;
                 });
 
-                for (const [, [header, imageHtml, text]] of sortedNotes) {
-                    d.addNote(m.note([header, imageHtml, text]));
+                for (const [, [header, imageHtml, backContent, text]] of sortedNotes) {
+                    d.addNote(m.note([header, imageHtml, backContent, text]));
                 }
 
                 updateProgress(`Creating Anki deck for ${deckName}...`, 90 + (i / pdfs.length) * 10);
