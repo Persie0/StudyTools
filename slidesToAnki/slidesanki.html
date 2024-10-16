@@ -346,6 +346,10 @@
                 }
             }
 
+            // Generate order field
+            const currentDate = new Date();
+            const orderField = `${currentDate.getTime()}${i + 1}${pageNum.toString().padStart(3, '0')}`;
+
             // Combine slides with the same title or similar titles (if option is enabled)
             if (combineCheckbox.checked || combineSimilarCheckbox.checked) {
                 const existingNoteIndex = notes.findIndex(note => note.key === noteKey);
@@ -361,7 +365,7 @@
                     // Create a new note
                     notes.push({
                         key: noteKey,
-                        order: notes.length + 1, // Add explicit order
+                        order: orderField,
                         header: header,
                         imageHtml: `<img src="${imageData}">`,
                         backContent: '',
@@ -374,7 +378,7 @@
                 const uniqueNoteKey = `${pageNum}_${header}`;
                 notes.push({
                     key: uniqueNoteKey,
-                    order: notes.length + 1, // Add explicit order
+                    order: orderField,
                     header: header,
                     imageHtml: `<img src="${imageData}">`,
                     backContent: '',
@@ -390,7 +394,7 @@
 
         // Add all notes to the deck in the order they were created
         for (const { order, header, imageHtml, backContent, text } of notes) {
-            d.addNote(m.note([order.toString(), header, imageHtml, backContent, text]));
+            d.addNote(m.note([order, header, imageHtml, backContent, text]));
         }
 
         updateProgress(`Creating Anki deck for ${deckName}...`, 90 + (i / pdfs.length) * 10);
