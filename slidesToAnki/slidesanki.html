@@ -211,7 +211,7 @@
         const pdf = pdfs[i];
         const pdfDoc = await pdfjsLib.getDocument(URL.createObjectURL(pdf)).promise;
 
-        // Create a model with an image field and an order field
+        // Create a model with an image field and  an order field
         var m = new Model({
             name: "Basic with Image and Order",
             id: "1543634829845", // Changed ID to differentiate from the old model
