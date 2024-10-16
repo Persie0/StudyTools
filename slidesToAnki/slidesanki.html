@@ -203,13 +203,13 @@
         }
 
         async function generateAnkiDecks() {
-    updateProgress("Processing PDFs...", 0);
-    statsArea.innerHTML = ''; // Clear previous stats
-    downloadArea.innerHTML = ''; // Clear previous download links
+            updateProgress("Processing PDFs...", 0);
+            statsArea.innerHTML = ''; // Clear previous stats
+            downloadArea.innerHTML = ''; // Clear previous download links
 
-    for (let i = 0; i < pdfs.length; i++) {
-        const pdf = pdfs[i];
-        const pdfDoc = await pdfjsLib.getDocument(URL.createObjectURL(pdf)).promise;
+            for (let i = 0; i < pdfs.length; i++) {
+                const pdf = pdfs[i];
+                const pdfDoc = await pdfjsLib.getDocument(URL.createObjectURL(pdf)).promise;
 
         // Create a model with an image field and  an order field
         var m = new Model({
@@ -307,122 +307,158 @@
                 }
             }
 
-            titleText = titleText.replace(" ̈a", 'ä').replace(" ̈o", 'ö').replace(" ̈u", 'ü');
+                    titleText = titleText.replace(" ̈a", 'ä').replace(" ̈o", 'ö').replace(" ̈u", 'ü');
 
-            // Remove title indexes from cleanedItems
-            cleanedItems.splice(0, titleParts);
+                    // Remove title indexes from cleanedItems
+                    cleanedItems.splice(0, titleParts);
 
-            let header = titleText.trim();
+                    let header = titleText.trim();
 
-            // If the title is just one letter, take the next line as well
-            if (header.length === 1 && cleanedItems.length > 0) {
-                header += ' ' + cleanedItems[0].str.trim();
-                cleanedItems.splice(0, 1);
-            }
-
-            const scale = 2; // Increase scale for higher resolution
-            const viewport = page.getViewport({ scale });
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
-
-            await page.render({ canvasContext: context, viewport }).promise;
-
-            const imageData = canvas.toDataURL('image/jpeg', 0.9);
-
-            // Check if we should skip this slide (incremental)
-            const currentSlideContent = cleanedItems.map(item => item.str).join(' ');
-            if (removeIncrementalCheckbox.checked && includesContent(currentSlideContent, previousSlideContent)) {
-                continue;
-            }
-            previousSlideContent = currentSlideContent;
-
-            let noteKey = header;
-            if (combineSimilarCheckbox.checked) {
-                const words = header.split(' ');
-                if (words.length >= 1 && (previousTitle.startsWith(words[0]) || header.startsWith(previousTitle) || header === previousTitle + ':')) {
-                    noteKey = previousTitle;
-                }
-            }
-
-            // Combine slides with the same title or similar titles (if option is enabled)
-            if (combineCheckbox.checked || combineSimilarCheckbox.checked) {
-                const existingNoteIndex = notes.findIndex(note => note.key === noteKey);
-                if (existingNoteIndex !== -1) {
-                    // Append the image to the existing note
-                    const existingNote = notes[existingNoteIndex];
-                    existingNote.imageHtml += `<img src="${imageData}">`;
-                    if (includeTextCheckbox.checked) {
-                        existingNote.text += `<br>${currentSlideContent}`;
+                    // If the title is just one letter, take the next line as well
+                    if (header.length === 1 && cleanedItems.length > 0) {
+                        header += ' ' + cleanedItems[0].str.trim();
+                        cleanedItems.splice(0, 1);
                     }
-                    cardStats.set(noteKey, (cardStats.get(noteKey) || 0) + 1);
-                } else {
-                    // Create a new note
-                    notes.push({
-                        key: noteKey,
-                        order: notes.length + 1, // Add explicit order
-                        header: header,
-                        imageHtml: `<img src="${imageData}">`,
-                        backContent: '',
-                        text: includeTextCheckbox.checked ? currentSlideContent : ''
-                    });
-                    cardStats.set(noteKey, 1);
+
+                    const scale = 2; // Increase scale for higher resolution
+                    const viewport = page.getViewport({ scale });
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    await page.render({ canvasContext: context, viewport }).promise;
+
+                    const imageData = canvas.toDataURL('image/jpeg', 0.9);
+                    const imageName = `${titleText.replace(/[^a-zA-Z0-9]/g, '_')}_${i}_${pageNum}.jpg`;
+                    mediaFiles.push({ name: imageName, data: imageData });
+
+                    // Check if we should skip this slide (incremental)
+                    const currentSlideContent = cleanedItems.map(item => item.str).join(' ');
+                    if (removeIncrementalCheckbox.checked && includesContent(currentSlideContent, previousSlideContent)) {
+                        continue;
+                    }
+                    previousSlideContent = currentSlideContent;
+
+                    let noteKey = header;
+                    if (combineSimilarCheckbox.checked) {
+                        const words = header.split(' ');
+                        if (words.length >= 1 && (previousTitle.startsWith(words[0]) || header.startsWith(previousTitle) || header === previousTitle + ':')) {
+                            noteKey = previousTitle;
+                        }
+                    }
+
+                    // Combine slides with the same title or similar titles (if option is enabled)
+                    if (combineCheckbox.checked || combineSimilarCheckbox.checked) {
+                        const existingNoteIndex = notes.findIndex(note => note[0] === noteKey);
+                        if (existingNoteIndex !== -1) {
+                            // Append the image to the existing note
+                            const existingNote = notes[existingNoteIndex];
+                            existingNote[1] += `<img src="${imageName}">`;
+                            if (includeTextCheckbox.checked) {
+                                existingNote[3] += `<br>${currentSlideContent}`;
+                            }
+                            cardStats.set(noteKey, (cardStats.get(noteKey) || 0) + 1);
+                        } else {
+                            // Create a new note
+                            notes.push([
+                                noteKey,
+                                `<img src="${imageName}">`,
+                                '',
+                                includeTextCheckbox.checked ? currentSlideContent : ''
+                            ]);
+                            cardStats.set(noteKey, 1);
+                        }
+                    } else {
+                        // Create a separate note for each slide
+                        const uniqueNoteKey = `${pageNum}_${header}`;
+                        notes.push([
+                            header,
+                            `<img src="${imageName}">`,
+                            '',
+                            includeTextCheckbox.checked ? currentSlideContent : ''
+                        ]);
+                        cardStats.set(uniqueNoteKey, 1);
+                    }
+
+                    previousTitle = header;
+
+                    updateProgress(`Processing PDF ${i + 1} of ${pdfs.length}, page ${pageNum} of ${pdfDoc.numPages}`, (i / pdfs.length + pageNum / pdfDoc.numPages / pdfs.length) * 100);
                 }
-            } else {
-                // Create a separate note for each slide
-                const uniqueNoteKey = `${pageNum}_${header}`;
-                notes.push({
-                    key: uniqueNoteKey,
-                    order: notes.length + 1, // Add explicit order
-                    header: header,
-                    imageHtml: `<img src="${imageData}">`,
-                    backContent: '',
-                    text: includeTextCheckbox.checked ? currentSlideContent : ''
+
+                // Add all notes to the deck in the order they were created
+                for (const note of notes) {
+                    d.addNote(m.note(note));
+                }
+
+                // Log all notes
+                console.log("All notes:", notes);
+
+                // Check if notes are in the right order and reorder if necessary
+                const orderedNotes = notes.slice().sort((a, b) => {
+                    const aNum = parseInt(a[0].split('_')[0]);
+                    const bNum = parseInt(b[0].split('_')[0]);
+                    return aNum - bNum;
                 });
-                cardStats.set(uniqueNoteKey, 1);
+
+                if (JSON.stringify(notes) !== JSON.stringify(orderedNotes)) {
+                    console.log("Notes were not in the correct order. Reordering...");
+                    notes = orderedNotes;
+                    console.log("Reordered notes:", notes);
+                } else {
+                    console.log("Notes are already in the correct order.");
+                }
+
+                updateProgress(`Creating Anki deck for ${deckName}...`, 90 + (i / pdfs.length) * 10);
+
+                // Create a package and add the deck
+                var p = new Package();
+                p.addDeck(d);
+
+                // Add the image files to the package
+                for (const file of mediaFiles) {
+                    const blob = dataURItoBlob(file.data);
+                    console.log(file.name);
+                    p.addMedia(blob, file.name);
+                }
+
+                // Generate the .apkg file
+                const apkgArrayBuffer = await p.writeToFile(`${deckName}.apkg`);
+
+                // Create download link
+                const blob = new Blob([apkgArrayBuffer], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                const downloadLink = document.createElement('a');
+                downloadLink.href = url;
+                downloadLink.download = `${deckName}.apkg`;
+                downloadLink.textContent = `Download ${deckName}.apkg`;
+                downloadArea.appendChild(downloadLink);
+                downloadArea.appendChild(document.createElement('br'));
+
+                // Update stats
+                updateStats(deckName, notes.length, cardStats);
             }
 
-            previousTitle = header;
-
-            updateProgress(`Processing PDF ${i + 1} of ${pdfs.length}, page ${pageNum} of ${pdfDoc.numPages}`, (i / pdfs.length + pageNum / pdfDoc.numPages / pdfs.length) * 100);
+            updateProgress("All Anki decks generated!", 100);
         }
 
-        // Add all notes to the deck in the order they were created
-        for (const { order, header, imageHtml, backContent, text } of notes) {
-            d.addNote(m.note([order.toString(), header, imageHtml, backContent, text]));
-        }
-
-        updateProgress(`Creating Anki deck for ${deckName}...`, 90 + (i / pdfs.length) * 10);
-
-        // Create a package and add the deck
-        var p = new Package();
-        p.addDeck(d);
-
-        // Generate the .apkg file
-        const apkgArrayBuffer = await p.writeToFile(`${deckName}.apkg`);
-
-        // Create download link
-        const blob = new Blob([apkgArrayBuffer], { type: 'application/octet-stream' });
-        const url = URL.createObjectURL(blob);
-        const downloadLink = document.createElement('a');
-        downloadLink.href = url;
-        downloadLink.download = `${deckName}.apkg`;
-        downloadLink.textContent = `Download ${deckName}.apkg`;
-        downloadArea.appendChild(downloadLink);
-        downloadArea.appendChild(document.createElement('br'));
-
-        // Update stats
-        updateStats(deckName, notes.length, cardStats);
-    }
-
-    updateProgress("All Anki decks generated!", 100);
-}
         function showSnackbar(msg) {
             var x = document.getElementById("snackbar");
             x.innerHTML = msg;
             x.className = "show";
             setTimeout(function () { x.className = x.className.replace("show", ""); }, 3000);
+        }
+
+
+        function dataURItoBlob(dataURI) {
+            const byteString = atob(dataURI.split(',')[1]);
+            const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let i = 0; i < byteString.length; i++) {
+                ia[i] = byteString.charCodeAt(i);
+            }
+            return new Blob([ab], { type: mimeString });
         }
 
         function includesContent(currentText, previousText) {
