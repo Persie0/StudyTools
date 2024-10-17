@@ -224,8 +224,8 @@
             statsHTML += `<p>Total cards: ${totalCards}</p>`;
             statsHTML += `<h4>Card details:</h4>`;
             statsHTML += `<ul>`;
-            for (const [title, imageCount] of cardStats) {
-                statsHTML += `<li>${title}: ${imageCount} image${imageCount !== 1 ? 's' : ''}</li>`;
+            for (const [title, imageCount, pageNum] of cardStats) {
+                statsHTML += `<li>Page ${pageNum}: ${title}: ${imageCount} image${imageCount !== 1 ? 's' : ''}</li>`;
             }
             statsHTML += `</ul>`;
             statsArea.innerHTML += statsHTML;
@@ -301,12 +301,14 @@
         var d = new Deck(deckId, deckName);
 
         const notes = [];
-        const cardStats = new Map();
+        const notesPages = [];
+        const cardStats = [];
         const removedSlides = [];
 
         let previousSlideContent = '';
         let previousTitle = '';
         let previousSlideData = null;
+        let previousPageNum = 0;
 
         for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
             const page = await pdfDoc.getPage(pageNum);
@@ -379,13 +381,7 @@
                 if (previousSlideData) {
                     removedSlides.push(`Page ${previousSlideData.pageNum}: ${previousSlideData.header}`);
                     notes.pop(); // Remove the previous slide
-                    const lastKey = Array.from(cardStats.keys()).pop();
-                    if (lastKey) {
-                        cardStats.set(lastKey, cardStats.get(lastKey) - 1);
-                        if (cardStats.get(lastKey) === 0) {
-                            cardStats.delete(lastKey);
-                        }
-                    }
+                    cardStats.pop(); // Remove the last stat entry
                 }
             }
             previousSlideContent = currentSlideContent;
@@ -398,15 +394,15 @@
 
             // Combine consecutive slides with the same title or similar titles
             if (combineCheckbox.checked && (header === previousTitle || header.startsWith(previousTitle) || (previousTitle + ':').startsWith(header))) {
-                const existingNoteIndex = notes.findIndex(note => note.key === previousTitle);
-                if (existingNoteIndex !== -1) {
-                    // Append the image to the existing note
+                const existingNoteIndex = notes.map(note => note.key).lastIndexOf(previousTitle);
+                if (existingNoteIndex !== -1 && pageNum === previousPageNum + 1) {
+                    // Append the image to the existing note only if it's the next consecutive page
                     const existingNote = notes[existingNoteIndex];
                     existingNote.imageHtml += `<br><img src="${imageData}">`;
                     if (includeTextCheckbox.checked) {
                         existingNote.text += `<br>${currentSlideContent}`;
                     }
-                    cardStats.set(previousTitle, (cardStats.get(previousTitle) || 0) + 1);
+                    cardStats[existingNoteIndex][1]++; // Increment image count
                 } else {
                     // Create a new note
                     notes.push({
@@ -417,7 +413,7 @@
                         backContent: '',
                         text: includeTextCheckbox.checked ? currentSlideContent : ''
                     });
-                    cardStats.set(header, 1);
+                    cardStats.push([header, 1, pageNum]);
                 }
             } else {
                 // Create a separate note for each slide
@@ -429,11 +425,12 @@
                     backContent: '',
                     text: includeTextCheckbox.checked ? currentSlideContent : ''
                 });
-                cardStats.set(header, 1);
+                cardStats.push([header, 1, pageNum]);
             }
 
             previousTitle = header;
             previousSlideData = { pageNum, header };
+            previousPageNum = pageNum;
 
             updateProgress(`Processing PDF ${i + 1} of ${pdfs.length}, page ${pageNum} of ${pdfDoc.numPages}`, (i / pdfs.length + pageNum / pdfDoc.numPages / pdfs.length) * 100);
         }
@@ -468,7 +465,6 @@
 
     updateProgress("All Anki decks generated!", 100);
 }
-
 
 function showSnackbar(msg) {
             var x = document.getElementById("snackbar");
