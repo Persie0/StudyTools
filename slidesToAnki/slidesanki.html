@@ -28,7 +28,7 @@
     <button id="clear-files-button" class="button">Clear Selected Files</button>
     <div id="combine-slides">
         <input type="checkbox" id="combine-checkbox" checked>
-        <label for="combine-checkbox">Combine slides with the same title into one card</label>
+        <label for="combine-checkbox">Combine consecutive slides with the same title into one card</label>
     </div>
     <div id="combine-similar">
         <input type="checkbox" id="combine-similar-checkbox">
@@ -36,7 +36,7 @@
             title, or previous title followed by ':')</label>
     </div>
     <div id="remove-incremental">
-        <input type="checkbox" id="remove-incremental-checkbox">
+        <input type="checkbox" id="remove-incremental-checkbox"  checked>
         <label for="remove-incremental-checkbox">Remove incremental slides</label>
     </div>
     <div id="include-text">
@@ -55,7 +55,11 @@
         </ol>
         <p>This will ensure that new cards are introduced in the order specified by your sort field.</p>
     </div>
-    <div id="stats-area"></div>
+    <button type="button" class="collapsible">Stats</button>
+    <div class="content">
+        <div id="stats-area"></div>
+        <div id="removed-slides-info"></div>
+    </div>
     <div id="edit-area" style="display: none;">
         <h3>Edit slides:</h3>
         <div id="edit-container" class="edit-container"></div>
@@ -93,6 +97,7 @@
         const editContainer = document.getElementById('edit-container');
         const editArea = document.getElementById('edit-area');
         const downloadArea = document.getElementById('download-area');
+        const removedSlidesInfo = document.getElementById('removed-slides-info');
 
         // Event listeners for drag and drop
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -159,6 +164,8 @@
                 div.className = 'file-item';
                 div.innerHTML = `
             <span>${file.name}</span>
+            <button class="move-up" data-index="${index}">&#9650;</button>
+            <button class="move-down" data-index="${index}">&#9660;</button>
             <span class="remove-file" data-index="${index}">&#10005;</span>
         `;
                 fileList.appendChild(div);
@@ -171,6 +178,28 @@
                     pdfs.splice(index, 1);
                     updateFileList();
                     generateButton.disabled = pdfs.length === 0;
+                });
+            });
+
+            // Add event listeners to move up buttons
+            document.querySelectorAll('.move-up').forEach(button => {
+                button.addEventListener('click', function () {
+                    const index = parseInt(this.getAttribute('data-index'));
+                    if (index > 0) {
+                        [pdfs[index - 1], pdfs[index]] = [pdfs[index], pdfs[index - 1]];
+                        updateFileList();
+                    }
+                });
+            });
+
+            // Add event listeners to move down buttons
+            document.querySelectorAll('.move-down').forEach(button => {
+                button.addEventListener('click', function () {
+                    const index = parseInt(this.getAttribute('data-index'));
+                    if (index < pdfs.length - 1) {
+                        [pdfs[index], pdfs[index + 1]] = [pdfs[index + 1], pdfs[index]];
+                        updateFileList();
+                    }
                 });
             });
         }
@@ -190,7 +219,7 @@
     `;
         }
 
-        function updateStats(deckName, totalCards, cardStats) {
+        function updateStats(deckName, totalCards, cardStats, removedSlides) {
             let statsHTML = `<h3>Stats for ${deckName}</h3>`;
             statsHTML += `<p>Total cards: ${totalCards}</p>`;
             statsHTML += `<h4>Card details:</h4>`;
@@ -200,11 +229,22 @@
             }
             statsHTML += `</ul>`;
             statsArea.innerHTML += statsHTML;
+
+            if (removedSlides.length > 0) {
+                let removedSlidesHTML = `<h4>Removed slides for ${deckName}:</h4>`;
+                removedSlidesHTML += `<ul>`;
+                for (const slide of removedSlides) {
+                    removedSlidesHTML += `<li>${slide}</li>`;
+                }
+                removedSlidesHTML += `</ul>`;
+                removedSlidesInfo.innerHTML += removedSlidesHTML;
+            }
         }
 
         async function generateAnkiDecks() {
     updateProgress("Processing PDFs...", 0);
     statsArea.innerHTML = ''; // Clear previous stats
+    removedSlidesInfo.innerHTML = ''; // Clear previous removed slides info
     downloadArea.innerHTML = ''; // Clear previous download links
 
     for (let i = 0; i < pdfs.length; i++) {
@@ -262,9 +302,11 @@
 
         const notes = [];
         const cardStats = new Map();
+        const removedSlides = [];
 
         let previousSlideContent = '';
         let previousTitle = '';
+        let previousSlideData = null;
 
         for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
             const page = await pdfDoc.getPage(pageNum);
@@ -334,60 +376,64 @@
             // Check if we should skip this slide (incremental)
             const currentSlideContent = cleanedItems.map(item => item.str).join(' ');
             if (removeIncrementalCheckbox.checked && includesContent(currentSlideContent, previousSlideContent)) {
-                continue;
+                if (previousSlideData) {
+                    removedSlides.push(`Page ${previousSlideData.pageNum}: ${previousSlideData.header}`);
+                    notes.pop(); // Remove the previous slide
+                    const lastKey = Array.from(cardStats.keys()).pop();
+                    if (lastKey) {
+                        cardStats.set(lastKey, cardStats.get(lastKey) - 1);
+                        if (cardStats.get(lastKey) === 0) {
+                            cardStats.delete(lastKey);
+                        }
+                    }
+                }
             }
             previousSlideContent = currentSlideContent;
 
             let noteKey = header;
-            if (combineSimilarCheckbox.checked) {
-                const words = header.split(' ');
-                if (words.length >= 1 && (previousTitle.startsWith(words[0]) || header.startsWith(previousTitle) || header === previousTitle + ':')) {
-                    noteKey = previousTitle;
-                }
-            }
 
             // Generate order field
             const currentDate = new Date();
             const orderField = `${currentDate.getTime()}${i + 1}${pageNum.toString().padStart(3, '0')}`;
 
-            // Combine slides with the same title or similar titles (if option is enabled)
-            if (combineCheckbox.checked || combineSimilarCheckbox.checked) {
-                const existingNoteIndex = notes.findIndex(note => note.key === noteKey);
+            // Combine consecutive slides with the same title or similar titles
+            if (combineCheckbox.checked && (header === previousTitle || header.startsWith(previousTitle) || (previousTitle + ':').startsWith(header))) {
+                const existingNoteIndex = notes.findIndex(note => note.key === previousTitle);
                 if (existingNoteIndex !== -1) {
                     // Append the image to the existing note
                     const existingNote = notes[existingNoteIndex];
-                    existingNote.imageHtml += `<img src="${imageData}">`;
+                    existingNote.imageHtml += `<br><img src="${imageData}">`;
                     if (includeTextCheckbox.checked) {
                         existingNote.text += `<br>${currentSlideContent}`;
                     }
-                    cardStats.set(noteKey, (cardStats.get(noteKey) || 0) + 1);
+                    cardStats.set(previousTitle, (cardStats.get(previousTitle) || 0) + 1);
                 } else {
                     // Create a new note
                     notes.push({
-                        key: noteKey,
+                        key: header,
                         order: orderField,
                         header: header,
                         imageHtml: `<img src="${imageData}">`,
                         backContent: '',
                         text: includeTextCheckbox.checked ? currentSlideContent : ''
                     });
-                    cardStats.set(noteKey, 1);
+                    cardStats.set(header, 1);
                 }
             } else {
                 // Create a separate note for each slide
-                const uniqueNoteKey = `${pageNum}_${header}`;
                 notes.push({
-                    key: uniqueNoteKey,
+                    key: header,
                     order: orderField,
                     header: header,
                     imageHtml: `<img src="${imageData}">`,
                     backContent: '',
                     text: includeTextCheckbox.checked ? currentSlideContent : ''
                 });
-                cardStats.set(uniqueNoteKey, 1);
+                cardStats.set(header, 1);
             }
 
             previousTitle = header;
+            previousSlideData = { pageNum, header };
 
             updateProgress(`Processing PDF ${i + 1} of ${pdfs.length}, page ${pageNum} of ${pdfDoc.numPages}`, (i / pdfs.length + pageNum / pdfDoc.numPages / pdfs.length) * 100);
         }
@@ -417,12 +463,14 @@
         downloadArea.appendChild(document.createElement('br'));
 
         // Update stats
-        updateStats(deckName, notes.length, cardStats);
+        updateStats(deckName, notes.length, cardStats, removedSlides);
     }
 
     updateProgress("All Anki decks generated!", 100);
 }
-        function showSnackbar(msg) {
+
+
+function showSnackbar(msg) {
             var x = document.getElementById("snackbar");
             x.innerHTML = msg;
             x.className = "show";
@@ -438,6 +486,22 @@
                 }
             }
             return true;
+        }
+
+        // Collapsible stats
+        var coll = document.getElementsByClassName("collapsible");
+        var i;
+
+        for (i = 0; i < coll.length; i++) {
+            coll[i].addEventListener("click", function() {
+                this.classList.toggle("active");
+                var content = this.nextElementSibling;
+                if (content.style.display === "block") {
+                    content.style.display = "none";
+                } else {
+                    content.style.display = "block";
+                }
+            });
         }
 
     </script>
