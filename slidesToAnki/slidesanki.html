@@ -457,7 +457,7 @@
                         const existingNote = notes[existingNoteIndex];
                         existingNote.imageHtml += `<br><img src="${imageData}">`;
                         if (includeTextCheckbox.checked) {
-                            existingNote.text += `<br>${currentSlideContent}`;
+                            existingNote.text += `<br><br>${currentSlideContent}`;
                         }
                         cardStats[existingNoteIndex][1]++; // Increment image count
                         
