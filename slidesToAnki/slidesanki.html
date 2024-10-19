@@ -412,7 +412,6 @@
                 header += ' ' + cleanedItems[0].str.trim();
                 cleanedItems.splice(0, 1);
             }
-            console.log(header);
 
             const scale = 2; // Increase scale for higher resolution
             const viewport = page.getViewport({ scale });
@@ -427,7 +426,8 @@
 
             // Check if we should skip this slide (incremental)
             const currentSlideContent = cleanedItems.map(item => item.str).join(' ');
-            if (removeIncrementalCheckbox.checked && includesContent(currentSlideContent, previousSlideContent)) {
+            console.log(header, previousTitle);
+            if (removeIncrementalCheckbox.checked && includesContent(currentSlideContent, previousSlideContent, header, previousTitle)) {
                 if (previousSlideData) {
                     removedSlides.push(`Page ${previousSlideData.pageNum}: ${previousSlideData.header}`);
                     notes.pop(); // Remove the previous slide
@@ -548,7 +548,10 @@ function showSnackbar(msg) {
             setTimeout(function () { x.className = x.className.replace("show", ""); }, 3000);
         }
 
-        function includesContent(currentText, previousText) {
+        function includesContent(currentText, previousText, currentHeader, previousHeader) {
+            if (currentHeader !== previousHeader) {
+                return false;
+            }
             const currentWords = new Set(currentText.toLowerCase().split(/\s+/));
             const previousWords = new Set(previousText.toLowerCase().split(/\s+/));
             for (let word of previousWords) {
