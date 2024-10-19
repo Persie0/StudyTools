@@ -400,6 +400,7 @@
             }
 
             titleText = titleText.replace(" ̈a", 'ä').replace(" ̈o", 'ö').replace(" ̈u", 'ü');
+            
 
             // Remove title indexes from cleanedItems
             cleanedItems.splice(0, titleParts);
@@ -411,6 +412,7 @@
                 header += ' ' + cleanedItems[0].str.trim();
                 cleanedItems.splice(0, 1);
             }
+            console.log(header);
 
             const scale = 2; // Increase scale for higher resolution
             const viewport = page.getViewport({ scale });
@@ -464,6 +466,18 @@
                             existingNote.header = header;
                         }
                     }
+                    else {
+                    // Create a new note
+                    notes.push({
+                        key: header,
+                        order: orderField,
+                        header: header,
+                        imageHtml: `<img src="${imageData}">`,
+                        backContent: '',
+                        text: includeTextCheckbox.checked ? currentSlideContent : ''
+                    });
+                    cardStats.push([header, 1, pageNum]);
+                }
                  } else {
                     // Create a new note
                     notes.push({
