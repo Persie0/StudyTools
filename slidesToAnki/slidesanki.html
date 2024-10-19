@@ -43,6 +43,12 @@
         <input type="checkbox" id="include-text-checkbox" checked>
         <label for="include-text-checkbox">Include page text as back field (to make images searchable)</label>
     </div>
+    <div id="number-decks">
+        <input type="checkbox" id="number-decks-checkbox">
+        <label for="number-decks-checkbox">Number decks</label>
+        <input type="number" id="start-index" value="1" min="1" style="width: 50px;">
+        <label for="start-index">Start index</label>
+    </div>
     <button id="generate-button" disabled>Generate Anki Decks</button>
     <div id="progress-area"></div>
     <div id="reposition-info" class="info-box">
@@ -98,6 +104,8 @@
         const editArea = document.getElementById('edit-area');
         const downloadArea = document.getElementById('download-area');
         const removedSlidesInfo = document.getElementById('removed-slides-info');
+        const numberDecksCheckbox = document.getElementById('number-decks-checkbox');
+        const startIndexInput = document.getElementById('start-index');
 
         // Event listeners for drag and drop
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -241,11 +249,48 @@
             }
         }
 
+
+        function compareTitles(header, previousTitle) {
+    // Split the header and previousTitle by spaces
+    let headerWords = header.split(" ");
+    let previousWords = previousTitle.split(" ");
+
+    // Check if the first or second word ends with ':' and remove it if so
+    if (headerWords[0].endsWith(":")) {
+        headerWords[0] = headerWords[0].slice(0, -1); // Remove the ':'
+    }
+    if (headerWords.length > 1 && headerWords[1].endsWith(":")) {
+        headerWords[1] = headerWords[1].slice(0, -1); // Remove the ':'
+    }
+
+    if (previousWords[0].endsWith(":")) {
+        previousWords[0] = previousWords[0].slice(0, -1); // Remove the ':'
+    }
+    if (previousWords.length > 1 && previousWords[1].endsWith(":")) {
+        previousWords[1] = previousWords[1].slice(0, -1); // Remove the ':'
+    }
+
+    // Compare the first word or the first two words
+    if (headerWords[0] === previousWords[0]) {
+        // Optionally, you can compare the second word as well
+        if (headerWords.length > 1 && previousWords.length > 1) {
+            return headerWords[1] === previousWords[1];
+        }
+        return true; // First word is the same
+    }
+
+    return false; // The words are not the same
+}
+
+
         async function generateAnkiDecks() {
     updateProgress("Processing PDFs...", 0);
     statsArea.innerHTML = ''; // Clear previous stats
     removedSlidesInfo.innerHTML = ''; // Clear previous removed slides info
     downloadArea.innerHTML = ''; // Clear previous download links
+
+    const numberDecks = numberDecksCheckbox.checked;
+    let startIndex = parseInt(startIndexInput.value);
 
     for (let i = 0; i < pdfs.length; i++) {
         const pdf = pdfs[i];
@@ -296,7 +341,10 @@
         });
 
         // Create a deck for each PDF
-        const deckName = pdf.name.replace(/\.[^/.]+$/, "");
+        let deckName = pdf.name.replace(/\.[^/.]+$/, "");
+        if (numberDecks) {
+            deckName = `${(startIndex + i).toString().padStart(2, '0')}. ${deckName}`;
+        }
         const deckId = Date.now(); // Use timestamp for consistent, incremental ID
         var d = new Deck(deckId, deckName);
 
@@ -393,17 +441,30 @@
             const orderField = `${currentDate.getTime()}${i + 1}${pageNum.toString().padStart(3, '0')}`;
 
             // Combine consecutive slides with the same title or similar titles
-            if (combineCheckbox.checked && (header === previousTitle || header.startsWith(previousTitle) || (previousTitle + ':').startsWith(header))) {
-                const existingNoteIndex = notes.map(note => note.key).lastIndexOf(previousTitle);
-                if (existingNoteIndex !== -1 && pageNum === previousPageNum + 1) {
-                    // Append the image to the existing note only if it's the next consecutive page
-                    const existingNote = notes[existingNoteIndex];
-                    existingNote.imageHtml += `<br><img src="${imageData}">`;
-                    if (includeTextCheckbox.checked) {
-                        existingNote.text += `<br>${currentSlideContent}`;
+            if (combineCheckbox.checked) {
+                const shouldCombine = (header === previousTitle || 
+                                      header.startsWith(previousTitle) || 
+                                      (previousTitle + ':').startsWith(header) ||
+                                      (header.replace(/[^a-zA-Z]/g, '') === previousTitle.replace(/[^a-zA-Z]/g, '') || compareTitles(header, previousTitle))
+);
+                
+                if (shouldCombine) {
+                    const existingNoteIndex = notes.map(note => note.key).lastIndexOf(previousTitle);
+                    if (existingNoteIndex !== -1 && pageNum === previousPageNum + 1) {
+                        // Append the image to the existing note only if it's the next consecutive page
+                        const existingNote = notes[existingNoteIndex];
+                        existingNote.imageHtml += `<br><img src="${imageData}">`;
+                        if (includeTextCheckbox.checked) {
+                            existingNote.text += `<br>${currentSlideContent}`;
+                        }
+                        cardStats[existingNoteIndex][1]++; // Increment image count
+                        
+                        // Update the header if it's more specific
+                        if (header.length > existingNote.header.length) {
+                            existingNote.header = header;
+                        }
                     }
-                    cardStats[existingNoteIndex][1]++; // Increment image count
-                } else {
+                 } else {
                     // Create a new note
                     notes.push({
                         key: header,
