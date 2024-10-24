@@ -227,9 +227,10 @@
     `;
         }
 
-        function updateStats(deckName, totalCards, cardStats, removedSlides) {
+        function updateStats(deckName, totalCards, cardStats, removedSlides, totalPages) {
             let statsHTML = `<h3>Stats for ${deckName}</h3>`;
             statsHTML += `<p>Total cards: ${totalCards}</p>`;
+            statsHTML += `<p>Total pages: ${totalPages}</p>`;
             statsHTML += `<h4>Card details:</h4>`;
             statsHTML += `<ul>`;
             for (const [title, imageCount, pageNum] of cardStats) {
@@ -535,7 +536,7 @@
         downloadArea.appendChild(document.createElement('br'));
 
         // Update stats
-        updateStats(deckName, notes.length, cardStats, removedSlides);
+        updateStats(deckName, notes.length, cardStats, removedSlides, pdfDoc.numPages);
     }
 
     updateProgress("All Anki decks generated!", 100);
