@@ -49,6 +49,14 @@
         <input type="number" id="start-index" value="1" min="1" style="width: 50px;">
         <label for="start-index">Start index</label>
     </div>
+    <div id="compress-images">
+        <input type="checkbox" id="compress-images-checkbox" checked>
+        <label for="compress-images-checkbox">Compress images</label>
+    </div>
+    <div id="max-resolution">
+        <label for="max-resolution-input">Max image width (px):</label>
+        <input type="number" id="max-resolution-input" value="1500" min="1" style="width: 70px;">
+    </div>
     <button id="generate-button" disabled>Generate Anki Decks</button>
     <div id="progress-area"></div>
     <div id="reposition-info" class="info-box">
@@ -106,6 +114,8 @@
         const removedSlidesInfo = document.getElementById('removed-slides-info');
         const numberDecksCheckbox = document.getElementById('number-decks-checkbox');
         const startIndexInput = document.getElementById('start-index');
+        const compressImagesCheckbox = document.getElementById('compress-images-checkbox');
+        const maxResolutionInput = document.getElementById('max-resolution-input');
 
         // Event listeners for drag and drop
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -292,6 +302,8 @@
 
     const numberDecks = numberDecksCheckbox.checked;
     let startIndex = parseInt(startIndexInput.value);
+    const compressImages = compressImagesCheckbox.checked;
+    const maxResolution = parseInt(maxResolutionInput.value);
 
     for (let i = 0; i < pdfs.length; i++) {
         const pdf = pdfs[i];
@@ -423,7 +435,31 @@
 
             await page.render({ canvasContext: context, viewport }).promise;
 
-            const imageData = canvas.toDataURL('image/jpeg', 0.9);
+            let imageData = canvas.toDataURL('image/jpeg', 0.9);
+
+            // Compress image if the option is checked
+            if (compressImages) {
+                const img = new Image();
+                img.src = imageData;
+                await new Promise(resolve => img.onload = resolve);
+
+                const maxWidth = maxResolution;
+                const maxHeight = maxResolution * (canvas.height / canvas.width);
+
+                if (img.width > maxWidth) {
+                    const ratio = maxWidth / img.width;
+                    const newWidth = maxWidth;
+                    const newHeight = img.height * ratio;
+
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = newWidth;
+                    tempCanvas.height = newHeight;
+                    const tempContext = tempCanvas.getContext('2d');
+                    tempContext.drawImage(img, 0, 0, newWidth, newHeight);
+
+                    imageData = tempCanvas.toDataURL('image/jpeg', 0.9);
+                }
+            }
 
             // Check if we should skip this slide (incremental)
             const currentSlideContent = cleanedItems.map(item => item.str).join(' ');
