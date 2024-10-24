@@ -10,6 +10,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/browser-image-compression/dist/browser-image-compression.js"></script>
     <link rel="stylesheet" href="styles.css">
 </head>
 
@@ -56,6 +57,10 @@
     <div id="max-resolution">
         <label for="max-resolution-input">Max image width (px):</label>
         <input type="number" id="max-resolution-input" value="1800" min="1" style="width: 70px;">
+    </div>
+    <div id="max-size">
+        <label for="max-size-input">Max image size (kB):</label>
+        <input type="number" id="max-size-input" value="200" min="1" style="width: 70px;">
     </div>
     <button id="generate-button" disabled>Generate Anki Decks</button>
     <div id="progress-area"></div>
@@ -116,6 +121,7 @@
         const startIndexInput = document.getElementById('start-index');
         const compressImagesCheckbox = document.getElementById('compress-images-checkbox');
         const maxResolutionInput = document.getElementById('max-resolution-input');
+        const maxSizeInput = document.getElementById('max-size-input');
 
         // Event listeners for drag and drop
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -304,6 +310,7 @@
     let startIndex = parseInt(startIndexInput.value);
     const compressImages = compressImagesCheckbox.checked;
     const maxResolution = parseInt(maxResolutionInput.value);
+    const maxSizeKB = parseInt(maxSizeInput.value);
 
     for (let i = 0; i < pdfs.length; i++) {
         const pdf = pdfs[i];
@@ -374,6 +381,8 @@
         for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
             const page = await pdfDoc.getPage(pageNum);
             const textContent = await page.getTextContent();
+            const scale = 2; // Increase scale for higher resolution
+            const viewport = page.getViewport({ scale });
 
             // Remove empty texts and non-letter indexes
             var cleanedItems = textContent.items.filter(item => item.str.trim() !== '' && /[a-zA-Z]/.test(item.str));
@@ -386,12 +395,30 @@
             // Sort items by y-coordinate (topmost first)
             cleanedItems.sort((a, b) => b.transform[5] - a.transform[5]);
 
+            // Find the leftmost and rightmost text points
+            let leftmost = Math.min(...cleanedItems.map(item => item.transform[4]));
+            let rightmost = Math.max(...cleanedItems.map(item => item.transform[4] + item.width));
+
+            // Calculate the middle point
+            let middlePoint = (leftmost + rightmost) / 2;
+
+
+            // Create a new list with only the texts which begin on the left side of the slide
+            var leftSideItems = cleanedItems.filter(item => (item.transform[4] < middlePoint) && item.str.trim() !== '');
+            console.log(leftSideItems);
+
             // Fix umlauts, combine title text, and remove title indexes
             let titleText = '';
-            const firstTransform = cleanedItems[0]?.transform?.[5];
+            const firstTransform = (leftSideItems.length > 0 ? leftSideItems[0] : cleanedItems[0])?.transform?.[5];
             let titleParts = 0;
+            var foundItem=false;
             for (let j = 0; j < cleanedItems.length; j++) {
                 const item = cleanedItems[j];
+                if(item != leftSideItems[0] && !foundItem)
+            {
+                continue;
+            }
+            foundItem=true;
                 if (item.transform[5] === firstTransform && item.str.trim() !== '') {
                     titleParts++;
                     const currentChar = item.str.trim().toLowerCase();
@@ -426,8 +453,7 @@
                 cleanedItems.splice(0, 1);
             }
 
-            const scale = 2; // Increase scale for higher resolution
-            const viewport = page.getViewport({ scale });
+
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d');
             canvas.height = viewport.height;
@@ -436,29 +462,25 @@
             await page.render({ canvasContext: context, viewport }).promise;
 
             let imageData = canvas.toDataURL('image/jpeg', 0.9);
-
             // Compress image if the option is checked
             if (compressImages) {
-                const img = new Image();
-                img.src = imageData;
-                await new Promise(resolve => img.onload = resolve);
+                const response = await fetch(imageData);
+                const blob = await response.blob();
 
-                const maxWidth = maxResolution;
-                const maxHeight = maxResolution * (canvas.height / canvas.width);
+                const options = {
+                    maxSizeMB: maxSizeKB / 1024, // Convert kB to MB
+                    maxWidthOrHeight: maxResolution, // Maximum width or height
+                    useWebWorker: true, // Use web worker for better performance
+                    onProgress: (progress) => {
+                        //console.log(`Compression progress: ${progress}`);
+                    },
+                };
 
-                if (img.width > maxWidth) {
-                    const ratio = maxWidth / img.width;
-                    const newWidth = maxWidth;
-                    const newHeight = img.height * ratio;
-
-                    const tempCanvas = document.createElement('canvas');
-                    tempCanvas.width = newWidth;
-                    tempCanvas.height = newHeight;
-                    const tempContext = tempCanvas.getContext('2d');
-                    tempContext.drawImage(img, 0, 0, newWidth, newHeight);
-
-                    imageData = tempCanvas.toDataURL('image/jpeg', 0.9);
-                }
+                const compressedImage = await imageCompression(blob, options);
+                const reader = new FileReader();
+                reader.readAsDataURL(compressedImage);
+                await new Promise(resolve => reader.onload = resolve);
+                imageData = reader.result;
             }
 
             // Check if we should skip this slide (incremental)
