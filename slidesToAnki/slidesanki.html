@@ -27,6 +27,7 @@
     </div>
     <div id="file-list"></div>
     <button id="clear-files-button" class="button">Clear Selected Files</button>
+    <button id="inverse-files-button" class="button">Inverse File Order</button>
     <div id="combine-slides">
         <input type="checkbox" id="combine-checkbox" checked>
         <label for="combine-checkbox">Combine consecutive slides with the same title into one card</label>
@@ -113,6 +114,7 @@
         const removeIncrementalCheckbox = document.getElementById('remove-incremental-checkbox');
         const includeTextCheckbox = document.getElementById('include-text-checkbox');
         const clearFilesButton = document.getElementById('clear-files-button');
+        const inverseFilesButton = document.getElementById('inverse-files-button');
         const editContainer = document.getElementById('edit-container');
         const editArea = document.getElementById('edit-area');
         const downloadArea = document.getElementById('download-area');
@@ -148,6 +150,9 @@
 
         // Handle clear files button click
         clearFilesButton.addEventListener('click', clearFiles, false);
+
+        // Handle inverse files button click
+        inverseFilesButton.addEventListener('click', inverseFiles, false);
 
         // Prevent default drag behaviors
         function preventDefaults(e) {
@@ -232,6 +237,11 @@
             pdfs = [];
             updateFileList();
             generateButton.disabled = true;
+        }
+
+        function inverseFiles() {
+            pdfs.reverse();
+            updateFileList();
         }
 
         function updateProgress(message, percentage) {
