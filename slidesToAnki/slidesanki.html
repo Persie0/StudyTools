@@ -74,6 +74,11 @@
             <li>Right-click and select "Reposition" to assign the current sorted order to the cards.</li>
         </ol>
         <p>This will ensure that new cards are introduced in the order specified by your sort field.</p>
+    <div class="info-box" style="background-color: #fffbe6; border: 1px solid #ffd700; padding: 10px; margin: 10px 0;">
+        <h3>Merging Multiple Cards:</h3>
+        <p>If you want to merge multiple cards after creating them in Anki, you can use the 
+            <a href="https://ankiweb.net/shared/info/1425504015" target="_blank">Merge Notes</a> add-on.</p>
+    </div>
     </div>
     <button type="button" class="collapsible">Stats</button>
     <div class="content">
@@ -276,339 +281,346 @@
             }
         }
 
-
         function compareTitles(header, previousTitle) {
-    // Split the header and previousTitle by spaces
-    let headerWords = header.split(" ");
-    let previousWords = previousTitle.split(" ");
+            // Split the header and previousTitle by spaces
+            let headerWords = header.split(" ");
+            let previousWords = previousTitle.split(" ");
 
-    // Check if the first or second word ends with ':' and remove it if so
-    if (headerWords[0].endsWith(":")) {
-        headerWords[0] = headerWords[0].slice(0, -1); // Remove the ':'
-    }
-    if (headerWords.length > 1 && headerWords[1].endsWith(":")) {
-        headerWords[1] = headerWords[1].slice(0, -1); // Remove the ':'
-    }
+            // Check if the first or second word ends with ':' and remove it if so
+            if (headerWords[0].endsWith(":")) {
+                headerWords[0] = headerWords[0].slice(0, -1); // Remove the ':'
+            }
+            if (headerWords.length > 1 && headerWords[1].endsWith(":")) {
+                headerWords[1] = headerWords[1].slice(0, -1); // Remove the ':'
+            }
 
-    if (previousWords[0].endsWith(":")) {
-        previousWords[0] = previousWords[0].slice(0, -1); // Remove the ':'
-    }
-    if (previousWords.length > 1 && previousWords[1].endsWith(":")) {
-        previousWords[1] = previousWords[1].slice(0, -1); // Remove the ':'
-    }
+            if (previousWords[0].endsWith(":")) {
+                previousWords[0] = previousWords[0].slice(0, -1); // Remove the ':'
+            }
+            if (previousWords.length > 1 && previousWords[1].endsWith(":")) {
+                previousWords[1] = previousWords[1].slice(0, -1); // Remove the ':'
+            }
 
-    // Compare the first word or the first two words
-    if (headerWords[0] === previousWords[0]) {
-        // Optionally, you can compare the second word as well
-        if (headerWords.length > 1 && previousWords.length > 1) {
-            return headerWords[1] === previousWords[1];
+            // Compare the first word or the first two words
+            if (headerWords[0] === previousWords[0]) {
+                // Optionally, you can compare the second word as well
+                if (headerWords.length > 1 && previousWords.length > 1) {
+                    return headerWords[1] === previousWords[1];
+                }
+                return true; // First word is the same
+            }
+
+            return false; // The words are not the same
         }
-        return true; // First word is the same
-    }
-
-    return false; // The words are not the same
-}
-
 
         async function generateAnkiDecks() {
-    updateProgress("Processing PDFs...", 0);
-    statsArea.innerHTML = ''; // Clear previous stats
-    removedSlidesInfo.innerHTML = ''; // Clear previous removed slides info
-    downloadArea.innerHTML = ''; // Clear previous download links
+            updateProgress("Processing PDFs...", 0);
+            statsArea.innerHTML = ''; // Clear previous stats
+            removedSlidesInfo.innerHTML = ''; // Clear previous removed slides info
+            downloadArea.innerHTML = ''; // Clear previous download links
 
-    const numberDecks = numberDecksCheckbox.checked;
-    let startIndex = parseInt(startIndexInput.value);
-    const compressImages = compressImagesCheckbox.checked;
-    const maxResolution = parseInt(maxResolutionInput.value);
-    const maxSizeKB = parseInt(maxSizeInput.value);
+            const numberDecks = numberDecksCheckbox.checked;
+            let startIndex = parseInt(startIndexInput.value);
+            const compressImages = compressImagesCheckbox.checked;
+            const maxResolution = parseInt(maxResolutionInput.value);
+            const maxSizeKB = parseInt(maxSizeInput.value);
 
-    for (let i = 0; i < pdfs.length; i++) {
-        const pdf = pdfs[i];
-        const pdfDoc = await pdfjsLib.getDocument(URL.createObjectURL(pdf)).promise;
+            for (let i = 0; i < pdfs.length; i++) {
+                const pdf = pdfs[i];
+                const pdfDoc = await pdfjsLib.getDocument(URL.createObjectURL(pdf)).promise;
 
-        // Create a model with an image field and an order field
-        var m = new Model({
-            name: "Basic with Image and Order",
-            id: "1543634829845", // Changed ID to differentiate from the old model
-            flds: [
-                { name: "Order" },
-                { name: "Front" },
-                { name: "Back" },
-                { name: "BackContent" },
-                { name: "Text" },
-            ],
-            req: [[0, "all", [0]]],
-            tmpls: [
-                {
-                    name: "Card 1",
-                    qfmt: "{{Front}}",
-                    afmt: "{{FrontSide}}<hr id=answer>{{Back}}<br><div class=\"back-content\">{{BackContent}}</div>",
-                }
-            ],
-            css: `
-            .card {
-                font-family: arial;
-                font-size: 20px;
-                text-align: center;
-                color: black;
-                background-color: white;
-            }
-
-            .back-content {
-                font-size: 16px;
-                display: inline-block;
-                text-align: left;
-                width: 100%;
-                max-width: 500px;
-                line-height: 1.6;
-                margin: 0 auto;
-            }
-
-            h2 {
-                display: inline;
-            }
-            `,
-        });
-
-        // Create a deck for each PDF
-        let deckName = pdf.name.replace(/\.[^/.]+$/, "");
-        if (numberDecks) {
-            deckName = `${(startIndex + i).toString().padStart(2, '0')}. ${deckName}`;
-        }
-        const deckId = Date.now(); // Use timestamp for consistent, incremental ID
-        var d = new Deck(deckId, deckName);
-
-        const notes = [];
-        const notesPages = [];
-        const cardStats = [];
-        const removedSlides = [];
-
-        let previousSlideContent = '';
-        let previousTitle = '';
-        let previousSlideData = null;
-        let previousPageNum = 0;
-
-        for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-            const page = await pdfDoc.getPage(pageNum);
-            const textContent = await page.getTextContent();
-            const scale = 2; // Increase scale for higher resolution
-            const viewport = page.getViewport({ scale });
-
-            // Remove empty texts and non-letter indexes
-            var cleanedItems = textContent.items.filter(item => item.str.trim() !== '' && /[a-zA-Z]/.test(item.str));
-
-            // Skip page if only one item left
-            if (cleanedItems.length <= 1) {
-                continue;
-            }
-
-            // Sort items by y-coordinate (topmost first)
-            cleanedItems.sort((a, b) => b.transform[5] - a.transform[5]);
-
-            // Find the leftmost and rightmost text points
-            let leftmost = Math.min(...cleanedItems.map(item => item.transform[4]));
-            let rightmost = Math.max(...cleanedItems.map(item => item.transform[4] + item.width));
-
-            // Calculate the middle point
-            let middlePoint = (leftmost + rightmost) / 2;
-
-
-            // Create a new list with only the texts which begin on the left side of the slide
-            var leftSideItems = cleanedItems.filter(item => (item.transform[4] < middlePoint) && item.str.trim() !== '');
-            console.log(leftSideItems);
-
-            // Fix umlauts, combine title text, and remove title indexes
-            let titleText = '';
-            const firstTransform = (leftSideItems.length > 0 ? leftSideItems[0] : cleanedItems[0])?.transform?.[5];
-            let titleParts = 0;
-            var foundItem=false;
-            for (let j = 0; j < cleanedItems.length; j++) {
-                const item = cleanedItems[j];
-                if(item != leftSideItems[0] && !foundItem)
-            {
-                continue;
-            }
-            foundItem=true;
-                if (item.transform[5] === firstTransform && item.str.trim() !== '') {
-                    titleParts++;
-                    const currentChar = item.str.trim().toLowerCase();
-                    if (j < cleanedItems.length - 1 && cleanedItems[j + 1].str === '\u0308') {
-                        if (currentChar === 'a') titleText += 'ä';
-                        else if (currentChar === 'o') titleText += 'ö';
-                        else if (currentChar === 'u') titleText += 'ü';
-                        else titleText += item.str + cleanedItems[j + 1].str;
-                        j += 1; // Skip the combining diaeresis
-                    } else {
-                        if (currentChar === 'a\u0308') titleText += 'ä';
-                        else if (currentChar === 'o\u0308') titleText += 'ö';
-                        else if (currentChar === 'u\u0308') titleText += 'ü';
-                        else titleText += item.str;
-                    }
-                } else {
-                    break;
-                }
-            }
-
-            titleText = titleText.replace(" ̈a", 'ä').replace(" ̈o", 'ö').replace(" ̈u", 'ü');
-            
-
-            // Remove title indexes from cleanedItems
-            cleanedItems.splice(0, titleParts);
-
-            let header = titleText.trim();
-
-            // If the title is just one letter, take the next line as well
-            if (header.length === 1 && cleanedItems.length > 0) {
-                header += ' ' + cleanedItems[0].str.trim();
-                cleanedItems.splice(0, 1);
-            }
-
-
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
-
-            await page.render({ canvasContext: context, viewport }).promise;
-
-            let imageData = canvas.toDataURL('image/jpeg', 0.9);
-            // Compress image if the option is checked
-            if (compressImages) {
-                const response = await fetch(imageData);
-                const blob = await response.blob();
-
-                const options = {
-                    maxSizeMB: maxSizeKB / 1024, // Convert kB to MB
-                    maxWidthOrHeight: maxResolution, // Maximum width or height
-                    useWebWorker: true, // Use web worker for better performance
-                    onProgress: (progress) => {
-                        //console.log(`Compression progress: ${progress}`);
-                    },
-                };
-
-                const compressedImage = await imageCompression(blob, options);
-                const reader = new FileReader();
-                reader.readAsDataURL(compressedImage);
-                await new Promise(resolve => reader.onload = resolve);
-                imageData = reader.result;
-            }
-
-            // Check if we should skip this slide (incremental)
-            const currentSlideContent = cleanedItems.map(item => item.str).join(' ');
-            console.log(header, previousTitle);
-            if (removeIncrementalCheckbox.checked && includesContent(currentSlideContent, previousSlideContent, header, previousTitle)) {
-                if (previousSlideData) {
-                    removedSlides.push(`Page ${previousSlideData.pageNum}: ${previousSlideData.header}`);
-                    notes.pop(); // Remove the previous slide
-                    cardStats.pop(); // Remove the last stat entry
-                }
-            }
-            previousSlideContent = currentSlideContent;
-
-            let noteKey = header;
-
-            // Generate order field
-            const currentDate = new Date();
-            const orderField = `${currentDate.getTime()}${i + 1}${pageNum.toString().padStart(3, '0')}`;
-
-            // Combine consecutive slides with the same title or similar titles
-            if (combineCheckbox.checked) {
-                const shouldCombine = (header === previousTitle || 
-                                      header.startsWith(previousTitle) || 
-                                      (previousTitle + ':').startsWith(header) ||
-                                      (header.replace(/[^a-zA-Z]/g, '') === previousTitle.replace(/[^a-zA-Z]/g, '') || compareTitles(header, previousTitle))
-);
-                
-                if (shouldCombine) {
-                    const existingNoteIndex = notes.map(note => note.key).lastIndexOf(previousTitle);
-                    if (existingNoteIndex !== -1 && pageNum === previousPageNum + 1) {
-                        // Append the image to the existing note only if it's the next consecutive page
-                        const existingNote = notes[existingNoteIndex];
-                        existingNote.imageHtml += `<br><img src="${imageData}">`;
-                        if (includeTextCheckbox.checked) {
-                            existingNote.text += `<br><br>${currentSlideContent}`;
+                // Create a model with an image field and an order field
+                var m = new Model({
+                    name: "Basic with Image and Order",
+                    id: "1543634829845", // Changed ID to differentiate from the old model
+                    flds: [
+                        { name: "Order" },
+                        { name: "Front" },
+                        { name: "Back" },
+                        { name: "BackContent" },
+                        { name: "Text" },
+                    ],
+                    req: [[0, "all", [0]]],
+                    tmpls: [
+                        {
+                            name: "Card 1",
+                            qfmt: "{{Front}}",
+                            afmt: "{{FrontSide}}<hr id=answer>{{Back}}<br><div class=\"back-content\">{{BackContent}}</div>",
                         }
-                        cardStats[existingNoteIndex][1]++; // Increment image count
-                        
-                        // Update the header if it's more specific
-                        if (header.length > existingNote.header.length) {
-                            existingNote.header = header;
-                        }
+                    ],
+                    css: `
+                    .card {
+                        font-family: arial;
+                        font-size: 20px;
+                        text-align: center;
+                        color: black;
+                        background-color: white;
                     }
-                    else {
-                    // Create a new note
-                    notes.push({
-                        key: header,
-                        order: orderField,
-                        header: header,
-                        imageHtml: `<img src="${imageData}">`,
-                        backContent: '',
-                        text: includeTextCheckbox.checked ? currentSlideContent : ''
-                    });
-                    cardStats.push([header, 1, pageNum]);
-                }
-                 } else {
-                    // Create a new note
-                    notes.push({
-                        key: header,
-                        order: orderField,
-                        header: header,
-                        imageHtml: `<img src="${imageData}">`,
-                        backContent: '',
-                        text: includeTextCheckbox.checked ? currentSlideContent : ''
-                    });
-                    cardStats.push([header, 1, pageNum]);
-                }
-            } else {
-                // Create a separate note for each slide
-                notes.push({
-                    key: header,
-                    order: orderField,
-                    header: header,
-                    imageHtml: `<img src="${imageData}">`,
-                    backContent: '',
-                    text: includeTextCheckbox.checked ? currentSlideContent : ''
+
+                    .back-content {
+                        font-size: 16px;
+                        display: inline-block;
+                        text-align: left;
+                        width: 100%;
+                        max-width: 500px;
+                        line-height: 1.6;
+                        margin: 0 auto;
+                    }
+
+                    h2 {
+                        display: inline;
+                    }
+                    `,
                 });
-                cardStats.push([header, 1, pageNum]);
+
+                // Create a deck for each PDF
+                let deckName = pdf.name.replace(/\.[^/.]+$/, "");
+                if (numberDecks) {
+                    deckName = `${(startIndex + i).toString().padStart(2, '0')}. ${deckName}`;
+                }
+                const deckId = Date.now(); // Use timestamp for consistent, incremental ID
+                var d = new Deck(deckId, deckName);
+
+                const notes = [];
+                const notesPages = [];
+                const cardStats = [];
+                const removedSlides = [];
+
+                let previousSlideContent = '';
+                let previousTitle = '';
+                let previousSlideData = null;
+                let previousPageNum = 0;
+
+                for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+                    const page = await pdfDoc.getPage(pageNum);
+                    const textContent = await page.getTextContent();
+                    const scale = 2; // Increase scale for higher resolution
+                    const viewport = page.getViewport({ scale });
+
+                    // Remove empty texts and non-letter indexes
+                    var cleanedItems = textContent.items.filter(item => item.str.trim() !== '' && /[a-zA-Z]/.test(item.str));
+
+                    // Skip page if only one item left
+                    if (cleanedItems.length <= 1) {
+                        continue;
+                    }
+
+                    // Sort items by y-coordinate (topmost first)
+                    cleanedItems.sort((a, b) => b.transform[5] - a.transform[5]);
+
+                    // Find the leftmost and rightmost text points
+                    let leftmost = Math.min(...cleanedItems.map(item => item.transform[4]));
+                    let rightmost = Math.max(...cleanedItems.map(item => item.transform[4] + item.width));
+
+                    // Calculate the middle point
+                    let middlePoint = (leftmost + rightmost) / 2;
+
+                    // Create a new list with only the texts which begin on the left side of the slide
+                    var leftSideItems = cleanedItems.filter(item => (item.transform[4] < middlePoint) && item.str.trim() !== '');
+                    console.log(leftSideItems);
+
+                    // Fix umlauts, combine title text, and remove title indexes
+                    let titleText = '';
+                    const firstTransform = (leftSideItems.length > 0 ? leftSideItems[0] : cleanedItems[0])?.transform?.[5];
+                    let titleParts = 0;
+                    var foundItem = false;
+                    for (let j = 0; j < cleanedItems.length; j++) {
+                        const item = cleanedItems[j];
+                        if (item != leftSideItems[0] && !foundItem) {
+                            continue;
+                        }
+                        foundItem = true;
+                        if (item.transform[5] === firstTransform && item.str.trim() !== '') {
+                            titleParts++;
+                            const currentChar = item.str.trim().toLowerCase();
+                            if (j < cleanedItems.length - 1 && cleanedItems[j + 1].str === '\u0308') {
+                                if (currentChar === 'a') titleText += 'ä';
+                                else if (currentChar === 'o') titleText += 'ö';
+                                else if (currentChar === 'u') titleText += 'ü';
+                                else titleText += item.str + cleanedItems[j + 1].str;
+                                j += 1; // Skip the combining diaeresis
+                            } else {
+                                if (currentChar === 'a\u0308') titleText += 'ä';
+                                else if (currentChar === 'o\u0308') titleText += 'ö';
+                                else if (currentChar === 'u\u0308') titleText += 'ü';
+                                else titleText += item.str;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+
+                    titleText = titleText.replace(" ̈a", 'ä').replace(" ̈o", 'ö').replace(" ̈u", 'ü');
+
+                    // Remove title indexes from cleanedItems
+                    cleanedItems.splice(0, titleParts);
+
+                    let header = titleText.trim();
+
+                    // If the title is just one letter, take the next line as well
+                    if (header.length === 1 && cleanedItems.length > 0) {
+                        header += ' ' + cleanedItems[0].str.trim();
+                        cleanedItems.splice(0, 1);
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    await page.render({ canvasContext: context, viewport }).promise;
+
+                    let imageData = canvas.toDataURL('image/jpeg', 0.9);
+                    // Compress image if the option is checked
+                    if (compressImages) {
+                        const response = await fetch(imageData);
+                        const blob = await response.blob();
+
+                        const options = {
+                            maxSizeMB: maxSizeKB / 1024, // Convert kB to MB
+                            maxWidthOrHeight: maxResolution, // Maximum width or height
+                            useWebWorker: true, // Use web worker for better performance
+                            onProgress: (progress) => {
+                                //console.log(`Compression progress: ${progress}`);
+                            },
+                        };
+
+                        const compressedImage = await imageCompression(blob, options);
+                        const reader = new FileReader();
+                        reader.readAsDataURL(compressedImage);
+                        await new Promise(resolve => reader.onload = resolve);
+                        imageData = reader.result;
+                    }
+
+                    // Check if we should skip this slide (incremental)
+                    const currentSlideContent = cleanedItems.map(item => item.str).join(' ');
+                    console.log(header, previousTitle);
+                    if (removeIncrementalCheckbox.checked && includesContent(currentSlideContent, previousSlideContent, header, previousTitle)) {
+                        if (previousSlideData) {
+                            removedSlides.push(`Page ${previousSlideData.pageNum}: ${previousSlideData.header}`);
+                            notes.pop(); // Remove the previous slide
+                            cardStats.pop(); // Remove the last stat entry
+                        }
+                    }
+                    previousSlideContent = currentSlideContent;
+
+                    let noteKey = header;
+
+                    // Generate order field
+                    const currentDate = new Date();
+                    const orderField = `${currentDate.getTime()}${i + 1}${pageNum.toString().padStart(3, '0')}`;
+
+                    // Combine consecutive slides with the same title or similar titles
+                    if (combineCheckbox.checked) {
+                        const shouldCombine = (header === previousTitle || 
+                                          header.startsWith(previousTitle) || 
+                                          (previousTitle + ':').startsWith(header) ||
+                                          (header.replace(/[^a-zA-Z]/g, '') === previousTitle.replace(/[^a-zA-Z]/g, '') || compareTitles(header, previousTitle))
+                        );
+                        
+                        if (shouldCombine && pageNum === previousPageNum + 1) {
+                            // Find the last note with the same or similar title
+                            let existingNoteIndex = -1;
+                            for (let k = notes.length - 1; k >= 0; k--) {
+                                const note = notes[k];
+                                const similarTitle = (note.header === previousTitle || 
+                                                    note.header.startsWith(previousTitle) || 
+                                                    (previousTitle + ':').startsWith(note.header) ||
+                                                    (note.header.replace(/[^a-zA-Z]/g, '') === previousTitle.replace(/[^a-zA-Z]/g, '') || 
+                                                     compareTitles(note.header, previousTitle)));
+                                if (similarTitle) {
+                                    existingNoteIndex = k;
+                                    break;
+                                }
+                            }
+
+                            if (existingNoteIndex !== -1) {
+                                // Append the image to the existing note
+                                const existingNote = notes[existingNoteIndex];
+                                existingNote.imageHtml += `<br><img src="${imageData}">`;
+                                if (includeTextCheckbox.checked) {
+                                    existingNote.text += `<br><br>${currentSlideContent}`;
+                                }
+                                cardStats[existingNoteIndex][1]++; // Increment image count
+                                
+                                // Update the header if it's more specific
+                                if (header.length > existingNote.header.length) {
+                                    existingNote.header = header;
+                                }
+                            } else {
+                                // Create a new note
+                                notes.push({
+                                    key: header,
+                                    order: orderField,
+                                    header: header,
+                                    imageHtml: `<img src="${imageData}">`,
+                                    backContent: '',
+                                    text: includeTextCheckbox.checked ? currentSlideContent : ''
+                                });
+                                cardStats.push([header, 1, pageNum]);
+                            }
+                        } else {
+                            // Create a new note
+                            notes.push({
+                                key: header,
+                                order: orderField,
+                                header: header,
+                                imageHtml: `<img src="${imageData}">`,
+                                backContent: '',
+                                text: includeTextCheckbox.checked ? currentSlideContent : ''
+                            });
+                            cardStats.push([header, 1, pageNum]);
+                        }
+                    } else {
+                        // Create a separate note for each slide
+                        notes.push({
+                            key: header,
+                            order: orderField,
+                            header: header,
+                            imageHtml: `<img src="${imageData}">`,
+                            backContent: '',
+                            text: includeTextCheckbox.checked ? currentSlideContent : ''
+                        });
+                        cardStats.push([header, 1, pageNum]);
+                    }
+
+                    previousTitle = header;
+                    previousSlideData = { pageNum, header };
+                    previousPageNum = pageNum;
+
+                    updateProgress(`Processing PDF ${i + 1} of ${pdfs.length}, page ${pageNum} of ${pdfDoc.numPages}`, (i / pdfs.length + pageNum / pdfDoc.numPages / pdfs.length) * 100);
+                }
+
+                // Add all notes to the deck in the order they were created
+                for (const { order, header, imageHtml, backContent, text } of notes) {
+                    d.addNote(m.note([order, header, imageHtml, backContent, text]));
+                }
+
+                updateProgress(`Creating Anki deck for ${deckName}...`, 90 + (i / pdfs.length) * 10);
+
+                // Create a package and add the deck
+                var p = new Package();
+                p.addDeck(d);
+
+                // Generate the .apkg file
+                const apkgArrayBuffer = await p.writeToFile(`${deckName}.apkg`);
+
+                // Create download link
+                const blob = new Blob([apkgArrayBuffer], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                const downloadLink = document.createElement('a');
+                downloadLink.href = url;
+                downloadLink.download = `${deckName}.apkg`;
+                downloadLink.textContent = `Download ${deckName}.apkg`;
+                downloadArea.appendChild(downloadLink);
+                downloadArea.appendChild(document.createElement('br'));
+
+                // Update stats
+                updateStats(deckName, notes.length, cardStats, removedSlides, pdfDoc.numPages);
             }
 
-            previousTitle = header;
-            previousSlideData = { pageNum, header };
-            previousPageNum = pageNum;
-
-            updateProgress(`Processing PDF ${i + 1} of ${pdfs.length}, page ${pageNum} of ${pdfDoc.numPages}`, (i / pdfs.length + pageNum / pdfDoc.numPages / pdfs.length) * 100);
+            updateProgress("All Anki decks generated!", 100);
         }
-
-        // Add all notes to the deck in the order they were created
-        for (const { order, header, imageHtml, backContent, text } of notes) {
-            d.addNote(m.note([order, header, imageHtml, backContent, text]));
-        }
-
-        updateProgress(`Creating Anki deck for ${deckName}...`, 90 + (i / pdfs.length) * 10);
-
-        // Create a package and add the deck
-        var p = new Package();
-        p.addDeck(d);
-
-        // Generate the .apkg file
-        const apkgArrayBuffer = await p.writeToFile(`${deckName}.apkg`);
-
-        // Create download link
-        const blob = new Blob([apkgArrayBuffer], { type: 'application/octet-stream' });
-        const url = URL.createObjectURL(blob);
-        const downloadLink = document.createElement('a');
-        downloadLink.href = url;
-        downloadLink.download = `${deckName}.apkg`;
-        downloadLink.textContent = `Download ${deckName}.apkg`;
-        downloadArea.appendChild(downloadLink);
-        downloadArea.appendChild(document.createElement('br'));
-
-        // Update stats
-        updateStats(deckName, notes.length, cardStats, removedSlides, pdfDoc.numPages);
-    }
-
-    updateProgress("All Anki decks generated!", 100);
-}
 
 function showSnackbar(msg) {
             var x = document.getElementById("snackbar");
