@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSON to Anki Deck Converter</title>
+    <script src="https://cdn.jsdelivr.net/gh/krmanik/genanki-js/dist/genanki.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .container {
+            background-color: #fff;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            max-width: 600px;
+            width: 100%;
+        }
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .github-icon {
+            font-size: 1.2rem;
+            color: #333;
+            text-decoration: none;
+        }
+        .github-icon:hover {
+            color: #000;
+        }
+        .my-form p {
+            margin-bottom: 0.5rem;
+        }
+        .button {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            text-align: center;
+            text-decoration: none;
+            font-size: 1rem;
+        }
+        .button:hover {
+            background-color: #0056b3;
+        }
+        textarea, input[type="text"] {
+            width: 100%;
+            padding: 0.5rem;
+            margin-bottom: 1rem;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+        .progress-bar {
+            width: 100%;
+            background-color: #e0e0e0;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-top: 1rem;
+        }
+        .progress-bar-fill {
+            display: block;
+            height: 1rem;
+            background-color: #007bff;
+            transition: width 0.2s;
+        }
+        #download-area a {
+            display: block;
+            margin-top: 1rem;
+            color: #007bff;
+            text-decoration: none;
+        }
+        #download-area a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>JSON to Anki Deck Converter<a href="https://github.com/Persie0/StudyTools/tree/main/jsonToAnki#readme"
+                target="_blank" class="github-icon github-btn"><i class="fab fa-github"></i></a>
+        </h1>
+        <div id="json-area">
+            <form class="my-form">
+                <p>Upload JSON file or enter JSON data</p>
+                <input type="file" id="file-input" accept="application/json">
+                <label for="file-input" class="button">Select JSON file</label>
+                <textarea id="json-input" rows="10" cols="50" placeholder='[{"front": "What is the capital of France?", "back": "Paris"}, {"front": "What is 2 + 2?", "back": "4"}]'></textarea>
+                <button type="button" class="button" id="copy-example">Copy Example</button>
+                <button type="button" class="button" id="copy-example-prompt">Copy Example + Prompt</button>
+            </form>
+        </div>
+        <div id="deck-title">
+            <label for="deck-title-input">Deck Title:</label>
+            <input type="text" id="deck-title-input" value="Default Deck Title">
+        </div>
+        <button id="generate-button" class="button">Generate Anki Deck</button>
+        <div id="progress-area"></div>
+        <div id="download-area"></div>
+    </div>
+
+    <script>
+        // The `initSqlJs` function is globally provided by all of the main dist files if loaded in the browser.
+        // We must specify this locateFile function if we are loading a wasm file from anywhere other than the current html page's folder.
+        config = {
+            locateFile: filename => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${filename}`
+        }
+
+        var SQL;
+        initSqlJs(config).then(function (sql) {
+            //Create the database
+            SQL = sql;
+        });
+
+        const fileInput = document.getElementById('file-input');
+        const jsonInput = document.getElementById('json-input');
+        const generateButton = document.getElementById('generate-button');
+        const progressArea = document.getElementById('progress-area');
+        const downloadArea = document.getElementById('download-area');
+        const deckTitleInput = document.getElementById('deck-title-input');
+        const copyExampleButton = document.getElementById('copy-example');
+        const copyExamplePromptButton = document.getElementById('copy-example-prompt');
+
+        // Handle selected file
+        fileInput.addEventListener('change', handleFile, false);
+
+        // Handle generate button click
+        generateButton.addEventListener('click', generateAnkiDeck, false);
+
+        // Handle copy example button click
+        copyExampleButton.addEventListener('click', copyExample, false);
+
+        // Handle copy example + prompt button click
+        copyExamplePromptButton.addEventListener('click', copyExamplePrompt, false);
+
+        function handleFile(event) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                jsonInput.value = e.target.result;
+            };
+            reader.readAsText(file);
+        }
+
+        function updateProgress(message, percentage) {
+            progressArea.innerHTML = `
+                <p>${message}</p>
+                <div class="progress-bar">
+                    <span class="progress-bar-fill" style="width: ${percentage}%;"></span>
+                </div>
+            `;
+        }
+
+        async function generateAnkiDeck() {
+            updateProgress("Processing JSON...", 0);
+            downloadArea.innerHTML = ''; // Clear previous download links
+
+            const deckTitle = deckTitleInput.value || "Default Deck Title";
+            const deckId = Date.now(); // Use timestamp for consistent, incremental ID
+            var d = new Deck(deckId, deckTitle);
+
+            let jsonData;
+            try {
+                jsonData = JSON.parse(jsonInput.value);
+            } catch (e) {
+                alert("Invalid JSON data");
+                return;
+            }
+
+            // Create a model with front and back fields
+            var m = new Model({
+                name: "Basic",
+                id: "1543634829845", // Changed ID to differentiate from the old model
+                flds: [
+                    { name: "Front" },
+                    { name: "Back" }
+                ],
+                req: [[0, "all", [0]]],
+                tmpls: [
+                    {
+                        name: "Card 1",
+                        qfmt: "{{Front}}",
+                        afmt: "{{FrontSide}}<hr id=answer>{{Back}}"
+                    }
+                ],
+                css: `
+                    .card {
+                        font-family: arial;
+                        font-size: 20px;
+                        text-align: center;
+                        color: black;
+                        background-color: white;
+                    }
+                `
+            });
+
+            // Add notes to the deck
+            jsonData.forEach((item, index) => {
+                const note = m.note([
+                    item.front,
+                    item.back
+                ]);
+                d.addNote(note);
+                updateProgress(`Processing card ${index + 1} of ${jsonData.length}`, ((index + 1) / jsonData.length) * 100);
+            });
+
+            updateProgress(`Creating Anki deck for ${deckTitle}...`, 90);
+
+            // Create a package and add the deck
+            var p = new Package();
+            p.addDeck(d);
+
+            // Generate the .apkg file
+            const apkgArrayBuffer = await p.writeToFile(`${deckTitle}.apkg`);
+
+            // Create download link
+            const blob = new Blob([apkgArrayBuffer], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const downloadLink = document.createElement('a');
+            downloadLink.href = url;
+            downloadLink.download = `${deckTitle}.apkg`;
+            downloadLink.textContent = `Download ${deckTitle}.apkg`;
+            downloadArea.appendChild(downloadLink);
+            downloadArea.appendChild(document.createElement('br'));
+
+            updateProgress("Anki deck generated!", 100);
+        }
+
+        function copyExample() {
+            const exampleText = '[{"front": "What is the capital of France?", "back": "Paris"}, {"front": "What is 2 + 2?", "back": "4"}]';
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(exampleText).then(() => {
+                    alert('Example copied to clipboard!');
+                }).catch(err => {
+                    console.error('Failed to copy text: ', err);
+                });
+            } else {
+                console.error('Clipboard API not supported');
+            }
+        }
+
+        function copyExamplePrompt() {
+            const examplePromptText = 'Create cards for Anki deck in the following format:\n1. {"front": "What is the capital of France?", "back": "Paris"}\n2. {"front": "What is 2 + 2?", "back": "4"}';
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(examplePromptText).then(() => {
+                    alert('Example + Prompt copied to clipboard!');
+                }).catch(err => {
+                    console.error('Failed to copy text: ', err);
+                });
+            } else {
+                console.error('Clipboard API not supported');
+            }
+        }
+    </script>
+</body>
+
+</html>

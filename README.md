@@ -7,6 +7,7 @@ A collection of browser-based PDF manipulation tools designed to enhance your st
   - [PDF Chapter Splitter](#1-pdf-chapter-splitter)
   - [PDF Slides to Anki Converter](#2-pdf-slides-to-anki-converter)
   - [PDF Page Stripper](#3-pdf-page-stripper)
+  - [JSON to Anki Deck Converter](#4-json-to-anki-deck-converter)
 - [Common Features](#features-common-to-all-tools)
 - [Privacy](#privacy)
 - [License](#license)
@@ -33,6 +34,12 @@ Clean up incrementally built presentation slides by removing intermediate steps.
 - Multiple comparison modes
 - Batch processing support
 - [Try PDF Page Stripper](./pdfPageStripper/stripper.html)
+
+### 4. JSON to Anki Deck Converter
+Convert JSON data into Anki flashcards effortlessly.
+- Supports custom card formats
+- Instant feedback on JSON validity
+- [Try JSON to Anki Deck Converter](./jsonToAnki/jsonToAnki.html)
 
 ## Features Common to All Tools
 - Drag & drop file upload
