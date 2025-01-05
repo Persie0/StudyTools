@@ -261,7 +261,7 @@
         }
 
         function copyExamplePrompt() {
-            const examplePromptText = 'Create cards for Anki deck in the following format:\n1. {"front": "What is the capital of France?", "back": "Paris"}\n2. {"front": "What is 2 + 2?", "back": "4"}';
+            const examplePromptText = 'Create cards for Anki deck from this pdf in the following format:\n1. {"front": "What is the capital of France?", "back": "Paris"}\n2. {"front": "What is 2 + 2?", "back": "4"}';
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(examplePromptText).then(() => {
                     alert('Example + Prompt copied to clipboard!');
