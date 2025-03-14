@@ -197,7 +197,7 @@
                 const div = document.createElement('div');
                 div.className = 'file-item';
                 div.innerHTML = `
-            <span>${file.name}</span>
+            <span>${(index + 1).toString().padStart(2, '0')}. ${file.name}</span>
             <button class="move-up" data-index="${index}">&#9650;</button>
             <button class="move-down" data-index="${index}">&#9660;</button>
             <span class="remove-file" data-index="${index}">&#10005;</span>
@@ -398,7 +398,7 @@
                     const viewport = page.getViewport({ scale });
 
                     // Remove empty texts and non-letter indexes
-                    var cleanedItems = textContent.items.filter(item => item.str.trim() !== '' && /[a-zA-Z]/.test(item.str));
+                    var cleanedItems = textContent.items.filter(item => item.str.trim() !== '' && /[a-zA-Z0-9\s\-]/.test(item.str));
 
                     // Skip page if only one item left
                     if (cleanedItems.length <= 1) {
@@ -432,17 +432,17 @@
                         foundItem = true;
                         if (item.transform[5] === firstTransform && item.str.trim() !== '') {
                             titleParts++;
-                            const currentChar = item.str.trim().toLowerCase();
+                            const currentChar = item.str.toLowerCase();
                             if (j < cleanedItems.length - 1 && cleanedItems[j + 1].str === '\u0308') {
-                                if (currentChar === 'a') titleText += 'ä';
-                                else if (currentChar === 'o') titleText += 'ö';
-                                else if (currentChar === 'u') titleText += 'ü';
+                                if (currentChar.trim() === 'a') titleText += 'ä';
+                                else if (currentChar.trim() === 'o') titleText += 'ö';
+                                else if (currentChar.trim() === 'u') titleText += 'ü';
                                 else titleText += item.str + cleanedItems[j + 1].str;
                                 j += 1; // Skip the combining diaeresis
                             } else {
-                                if (currentChar === 'a\u0308') titleText += 'ä';
-                                else if (currentChar === 'o\u0308') titleText += 'ö';
-                                else if (currentChar === 'u\u0308') titleText += 'ü';
+                                if (currentChar.trim() === 'a\u0308') titleText += 'ä';
+                                else if (currentChar.trim() === 'o\u0308') titleText += 'ö';
+                                else if (currentChar.trim() === 'u\u0308') titleText += 'ü';
                                 else titleText += item.str;
                             }
                         } else {
@@ -495,11 +495,15 @@
                     // Check if we should skip this slide (incremental)
                     const currentSlideContent = cleanedItems.map(item => item.str).join(' ');
                     console.log(header, previousTitle);
-                    if (removeIncrementalCheckbox.checked && includesContent(currentSlideContent, previousSlideContent, header, previousTitle)) {
-                        if (previousSlideData) {
+                    
+                    if (removeIncrementalCheckbox.checked && notes.length > 0 && previousSlideData) {
+                        // If current slide includes all content from the previous slide
+                        if (includesContent(currentSlideContent, previousSlideContent)) {
+                            // Remove the previous slide (like in scripts.js)
                             removedSlides.push(`Page ${previousSlideData.pageNum}: ${previousSlideData.header}`);
                             notes.pop(); // Remove the previous slide
                             cardStats.pop(); // Remove the last stat entry
+                            // The current slide will be added below, replacing the previous one
                         }
                     }
                     previousSlideContent = currentSlideContent;
@@ -629,12 +633,14 @@ function showSnackbar(msg) {
             setTimeout(function () { x.className = x.className.replace("show", ""); }, 3000);
         }
 
-        function includesContent(currentText, previousText, currentHeader, previousHeader) {
-            if (currentHeader !== previousHeader) {
-                return false;
-            }
-            const currentWords = new Set(currentText.toLowerCase().split(/\s+/));
-            const previousWords = new Set(previousText.toLowerCase().split(/\s+/));
+        function includesContent(currentText, previousText) {
+            if (!previousText || !currentText) return false;
+            
+            // Split by whitespace and filter out empty strings
+            const currentWords = new Set(currentText.toLowerCase().split(/\s+/).filter(word => word.trim() !== ''));
+            const previousWords = new Set(previousText.toLowerCase().split(/\s+/).filter(word => word.trim() !== ''));
+            
+            // Check if all words from previous slide are in current slide
             for (let word of previousWords) {
                 if (!currentWords.has(word)) {
                     return false;
