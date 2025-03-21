@@ -12,6 +12,39 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/browser-image-compression/dist/browser-image-compression.js"></script>
     <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Add this to your existing CSS */
+        .removed-slides-list {
+            list-style-type: none;
+            padding-left: 0;
+        }
+        
+        .removed-slides-list li {
+            background-color: #ffebee;
+            border-left: 3px solid #f44336;
+            padding: 5px 10px;
+            margin-bottom: 5px;
+            border-radius: 3px;
+        }
+        
+        #removed-slides-container {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        
+        #removed-slides-summary {
+            font-weight: bold;
+            font-size: 1.1em;
+            background-color: #fff8e1;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            border: 1px solid #ffe082;
+        }
+    </style>
 </head>
 
 <body>
@@ -86,7 +119,11 @@
     <button type="button" class="collapsible">Stats</button>
     <div class="content">
         <div id="stats-area"></div>
-        <div id="removed-slides-info"></div>
+        <div id="removed-slides-container" style="display: none;">
+            <h3>Removed Incremental Slides</h3>
+            <div id="removed-slides-summary"></div>
+            <div id="removed-slides-info"></div>
+        </div>
     </div>
     <div id="edit-area" style="display: none;">
         <h3>Edit slides:</h3>
@@ -265,6 +302,11 @@
             let statsHTML = `<h3>Stats for ${deckName}</h3>`;
             statsHTML += `<p>Total cards: ${totalCards}</p>`;
             statsHTML += `<p>Total pages: ${totalPages}</p>`;
+            
+            if (removeIncrementalCheckbox.checked) {
+                statsHTML += `<p>Incremental slides removed: <strong>${removedSlides.length}</strong></p>`;
+            }
+            
             statsHTML += `<h4>Card details:</h4>`;
             statsHTML += `<ul>`;
             for (const [title, imageCount, pageNum] of cardStats) {
@@ -273,14 +315,22 @@
             statsHTML += `</ul>`;
             statsArea.innerHTML += statsHTML;
 
-            if (removedSlides.length > 0) {
-                let removedSlidesHTML = `<h4>Removed slides for ${deckName}:</h4>`;
-                removedSlidesHTML += `<ul>`;
+            if (removedSlides.length > 0 && removeIncrementalCheckbox.checked) {
+                let removedSlidesHTML = `<h4>Removed incremental slides for ${deckName}:</h4>`;
+                removedSlidesHTML += `<ul class="removed-slides-list">`;
                 for (const slide of removedSlides) {
                     removedSlidesHTML += `<li>${slide}</li>`;
                 }
                 removedSlidesHTML += `</ul>`;
                 removedSlidesInfo.innerHTML += removedSlidesHTML;
+                
+                // Update the summary of removed slides
+                const removedSlidesSummary = document.getElementById('removed-slides-summary');
+                let totalRemovedSlides = 0;
+                document.querySelectorAll('#removed-slides-info ul').forEach(ul => {
+                    totalRemovedSlides += ul.children.length;
+                });
+                removedSlidesSummary.innerHTML = `<p>Total incremental slides removed across all PDFs: <strong>${totalRemovedSlides}</strong></p>`;
             }
         }
 
@@ -320,7 +370,16 @@
             updateProgress("Processing PDFs...", 0);
             statsArea.innerHTML = ''; // Clear previous stats
             removedSlidesInfo.innerHTML = ''; // Clear previous removed slides info
+            document.getElementById('removed-slides-summary').innerHTML = ''; // Clear previous summary
             downloadArea.innerHTML = ''; // Clear previous download links
+            
+            // Show or hide the removed slides container based on checkbox
+            const removedSlidesContainer = document.getElementById('removed-slides-container');
+            if (removeIncrementalCheckbox.checked) {
+                removedSlidesContainer.style.display = 'block';
+            } else {
+                removedSlidesContainer.style.display = 'none';
+            }
 
             const numberDecks = numberDecksCheckbox.checked;
             let startIndex = parseInt(startIndexInput.value);
@@ -503,7 +562,7 @@
                         // If current slide includes all content from the previous slide
                         if (includesContent(currentSlideContent, previousSlideContent)) {
                             // Remove the previous slide (like in scripts.js)
-                            removedSlides.push(`Page ${previousSlideData.pageNum}: ${previousSlideData.header}`);
+                            removedSlides.push(`Page ${previousSlideData.pageNum}: "${previousSlideData.header}" (replaced by page ${pageNum}: "${header}")`);
                             notes.pop(); // Remove the previous slide
                             cardStats.pop(); // Remove the last stat entry
                             // The current slide will be added below, replacing the previous one
