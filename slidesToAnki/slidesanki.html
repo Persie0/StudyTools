@@ -151,61 +151,43 @@
             <div class="prompt-container">
                 <button class="toggle-prompt-button" onclick="togglePrompt()">Show Prompt</button>
                 <pre id="ai-prompt" style="display: none;">
-Task:
-Analyze the provided slide presentation and structure its content for efficient Anki card creation.
-
-Step 1: Identify and Remove Unnecessary Slides
-Remove:
-
-Minor title slides that contain only a title (and possibly a chapter name or page number).
-
-Example: A slide that just says "Public Key Certificates" and also eg jst chapter title and autor and page number but with no extra content.
-
-Incremental content slides where the same base content is shown multiple times with small additions (e.g., bullet points appearing one by one). Only if really the same content - so word for word the same!
-
-Solution: Keep only the last complete version of such slides.
-
-
-
-Step 2: Organize Remaining Slides into Logical Sections
-
-Each section should represent a distinct topic without being too large.
-
-If a section has more than 3 slides, split it into sub-sections with structured titles:
-
-Example: Instead of one long section for "TLS Handshake," split it into:
-
-TLS Handshake – Negotiation Phase
-
-TLS Handshake – Key Exchange
-
-TLS Handshake – Completion
-
-Step 3: Output Format (JSON)
-Return the output as a JSON array, where:
-
-"title" is a descriptive name summarizing the section.
-
-"pages" is an array of integers listing the slide numbers in that section.
-
-Example JSON Output:
-[
-  {
-    "title": "Key Exchange Methods",
-    "pages": [10, 13]
-  },
-  {
-    "title": "Diffie-Hellman Key Exchange",
-    "pages": [14, 16]
-  }
-]
-]</pre>
+                    Task:
+                    Analyze the provided slide presentation and structure its content for efficient Anki card creation.
+                    
+                    Step 1: Organize Slides into Logical Sections
+                    
+                    Each section should represent a distinct topic without being too large.
+                    
+                    If a section has more than 3 slides, split it into sub-sections with structured titles:
+                    
+                    Example: Instead of one long section for "Bakers Algorithm," split it into:
+                    
+                    Bakers Algorithm – Background
+                    
+                    Bakers Algorithm – Algorithm Basics
+                    
+                    Bakers Algorithm – Example
+                    
+                    Step 2: Output Format (JSON)
+                    Return the output as a JSON array, where:
+                    
+                    "title" is a descriptive name summarizing the section.
+                    
+                    "pages" is an array of integers listing the slide numbers in that section.
+                    
+                    Example JSON Output:
+                    [
+                      {
+                        "title": "Key Exchange Methods",
+                        "pages": [10, 13]
+                      },
+                      {
+                        "title": "Diffie-Hellman Key Exchange",
+                        "pages": [14, 16]
+                      }
+                    ]
+</pre>
                 <button class="copy-button" onclick="copyPrompt()">Copy Prompt</button>
-            </div>
-            <div style="margin-top: 10px;">
-                <a href="https://gemini.google.com/app" target="_blank" style="color: #007bff; text-decoration: none;">
-                    Use Gemini AI to generate JSON configuration
-                </a>
             </div>
         </div>
         <textarea id="json-input" rows="10" placeholder="Paste your JSON configuration here..."></textarea>
@@ -339,14 +321,19 @@ Example JSON Output:
             radio.addEventListener('change', function() {
                 if (this.value === 'json') {
                     jsonInputContainer.style.display = 'block';
-                    dropArea.style.display = 'none';
-                    fileList.style.display = 'none';
-                    clearFilesButton.style.display = 'none';
+                    dropArea.style.display = 'block';
+                    fileList.style.display = 'block';
+                    clearFilesButton.style.display = 'inline-block';
                     inverseFilesButton.style.display = 'none';
                     // Hide specified settings in JSON mode
                     document.getElementById('combine-slides').style.display = 'none';
                     document.getElementById('combine-similar').style.display = 'none';
-                    document.getElementById('remove-incremental').style.display = 'none';
+                    // Keep remove incremental checkbox visible
+                    document.getElementById('remove-incremental').style.display = 'block';
+                    // Update file input to accept only one file
+                    fileInput.multiple = false;
+                    // Update drop area text
+                    dropArea.querySelector('p').textContent = 'Upload a single PDF file using the file dialog or by dragging and dropping it onto the dashed region';
                 } else {
                     jsonInputContainer.style.display = 'none';
                     dropArea.style.display = 'block';
@@ -357,6 +344,10 @@ Example JSON Output:
                     document.getElementById('combine-slides').style.display = 'block';
                     document.getElementById('combine-similar').style.display = 'block';
                     document.getElementById('remove-incremental').style.display = 'block';
+                    // Reset file input to accept multiple files
+                    fileInput.multiple = true;
+                    // Reset drop area text
+                    dropArea.querySelector('p').textContent = 'Upload PDF files using the file dialog or by dragging and dropping them onto the dashed region';
                 }
             });
         });
@@ -729,17 +720,43 @@ Example JSON Output:
 
             const notes = [];
             const cardStats = [];
+            let totalPages = 0;
+            const removedSlides = [];
 
+            // First, count total pages to process
             for (const section of jsonConfig) {
-                const sectionTitle = section.title;
-                const pages = section.pages;
-                
+                totalPages += section.pages.length;
+            }
+
+            let processedPages = 0;
+            let previousSlideContent = '';
+            let previousSlideData = null;
+
+            // Group sections by title
+            const groupedSections = {};
+            for (const section of jsonConfig) {
+                if (!groupedSections[section.title]) {
+                    groupedSections[section.title] = [];
+                }
+                groupedSections[section.title].push(...section.pages);
+            }
+
+            // Process each unique title
+            for (const [title, pages] of Object.entries(groupedSections)) {
+                let combinedImageHtml = '';
+                let combinedText = '';
+                let firstPageNum = pages[0];
+
+                // Process all pages for this title
                 for (const pageNum of pages) {
                     if (pageNum < 1 || pageNum > pdfDoc.numPages) {
                         jsonError.textContent = `Invalid page number ${pageNum}`;
                         jsonError.style.display = 'block';
                         return;
                     }
+
+                    updateProgress(`Processing page ${pageNum} of ${pdfDoc.numPages}`, (processedPages / totalPages) * 100);
+                    processedPages++;
 
                     const page = await pdfDoc.getPage(pageNum);
                     const textContent = await page.getTextContent();
@@ -773,28 +790,56 @@ Example JSON Output:
                         imageData = reader.result;
                     }
 
-                    // Create note
-                    const currentDate = new Date();
-                    const orderField = `${currentDate.getTime()}${pageNum.toString().padStart(3, '0')}`;
+                    // Check if we should skip this slide (incremental)
                     const currentSlideContent = cleanedItems.map(item => item.str).join(' ');
                     
-                    notes.push({
-                        key: sectionTitle,
-                        order: orderField,
-                        header: sectionTitle,
-                        imageHtml: `<img src="${imageData}">`,
-                        backContent: '',
-                        text: includeTextCheckbox.checked ? currentSlideContent : ''
-                    });
+                    if (removeIncrementalCheckbox.checked && notes.length > 0 && previousSlideData) {
+                        // If current slide includes all content from the previous slide
+                        if (includesContent(currentSlideContent, previousSlideContent)) {
+                            // Remove the previous slide
+                            removedSlides.push(`Page ${previousSlideData.pageNum}: "${previousSlideData.header}" (replaced by page ${pageNum}: "${title}")`);
+                            notes.pop(); // Remove the previous slide
+                            cardStats.pop(); // Remove the last stat entry
+                            // The current slide will be added below, replacing the previous one
+                        }
+                    }
+                    previousSlideContent = currentSlideContent;
+
+                    // Add image to combined HTML
+                    combinedImageHtml += `<img src="${imageData}"><br>`;
                     
-                    cardStats.push([sectionTitle, 1, pageNum]);
+                    // Add text content if enabled
+                    if (includeTextCheckbox.checked) {
+                        combinedText += `<br><br>${currentSlideContent}`;
+                    }
+
+                    previousSlideData = { pageNum, header: title };
                 }
+
+                // Create note with combined content
+                const currentDate = new Date();
+                const orderField = `${currentDate.getTime()}${firstPageNum.toString().padStart(3, '0')}`;
+                
+                notes.push({
+                    key: title,
+                    order: orderField,
+                    header: title,
+                    imageHtml: combinedImageHtml,
+                    backContent: '',
+                    text: combinedText
+                });
+                
+                cardStats.push([title, pages.length, firstPageNum]);
             }
+
+            updateProgress("Adding notes to deck...", 90);
 
             // Add notes to deck
             for (const { order, header, imageHtml, backContent, text } of notes) {
                 d.addNote(m.note([order, header, imageHtml, backContent, text]));
             }
+
+            updateProgress("Creating Anki deck...", 95);
 
             // Create and save the deck
             const p = new Package();
@@ -811,7 +856,7 @@ Example JSON Output:
             downloadArea.appendChild(downloadLink);
 
             // Update stats
-            updateStats(deckName, notes.length, cardStats, [], pdfDoc.numPages);
+            updateStats(deckName, notes.length, cardStats, removedSlides, pdfDoc.numPages);
             updateProgress("Anki deck generated!", 100);
         }
 
