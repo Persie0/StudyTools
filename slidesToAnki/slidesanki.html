@@ -44,6 +44,91 @@
             margin-bottom: 15px;
             border: 1px solid #ffe082;
         }
+        
+        #mode-selector {
+            margin: 20px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            border: 1px solid #dee2e6;
+        }
+        
+        #mode-selector label {
+            margin-right: 20px;
+            cursor: pointer;
+        }
+        
+        #json-input-container {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #fff;
+            border-radius: 5px;
+            border: 1px solid #dee2e6;
+        }
+        
+        #json-input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            resize: vertical;
+        }
+        
+        .error-message {
+            color: #dc3545;
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+        }
+        
+        .prompt-container {
+            position: relative;
+            margin: 10px 0;
+        }
+        
+        .toggle-prompt-button {
+            padding: 5px 10px;
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        
+        .toggle-prompt-button:hover {
+            background-color: #5a6268;
+        }
+        
+        .copy-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 5px 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .copy-button:hover {
+            background-color: #0056b3;
+        }
+        
+        #ai-prompt {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+            white-space: pre-wrap;
+            font-family: monospace;
+            margin: 0;
+        }
     </style>
 </head>
 
@@ -51,6 +136,81 @@
     <h1>PDF to Anki Deck Converter<a href="https://github.com/Persie0/StudyTools/tree/main/slidesToAnki#readme"
             target="_blank" class="github-icon github-btn"><i class="fab fa-github"></i></a>
     </h1>
+    <div id="mode-selector">
+        <label>
+            <input type="radio" name="mode" value="auto" checked> Automatic Mode
+        </label>
+        <label>
+            <input type="radio" name="mode" value="json"> JSON Mode
+        </label>
+    </div>
+    <div id="json-input-container" style="display: none;">
+        <h3>JSON Configuration</h3>
+        <div class="info-box" style="background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 15px; margin: 10px 0;">
+            <h4>AI Prompt for JSON Generation</h4>
+            <div class="prompt-container">
+                <button class="toggle-prompt-button" onclick="togglePrompt()">Show Prompt</button>
+                <pre id="ai-prompt" style="display: none;">
+Task:
+Analyze the provided slide presentation and structure its content for efficient Anki card creation.
+
+Step 1: Identify and Remove Unnecessary Slides
+Remove:
+
+Minor title slides that contain only a title (and possibly a chapter name or page number).
+
+Example: A slide that just says "Public Key Certificates" and also eg jst chapter title and autor and page number but with no extra content.
+
+Incremental content slides where the same base content is shown multiple times with small additions (e.g., bullet points appearing one by one). Only if really the same content - so word for word the same!
+
+Solution: Keep only the last complete version of such slides.
+
+
+
+Step 2: Organize Remaining Slides into Logical Sections
+
+Each section should represent a distinct topic without being too large.
+
+If a section has more than 3 slides, split it into sub-sections with structured titles:
+
+Example: Instead of one long section for "TLS Handshake," split it into:
+
+TLS Handshake – Negotiation Phase
+
+TLS Handshake – Key Exchange
+
+TLS Handshake – Completion
+
+Step 3: Output Format (JSON)
+Return the output as a JSON array, where:
+
+"title" is a descriptive name summarizing the section.
+
+"pages" is an array of integers listing the slide numbers in that section.
+
+Example JSON Output:
+[
+  {
+    "title": "Key Exchange Methods",
+    "pages": [10, 13]
+  },
+  {
+    "title": "Diffie-Hellman Key Exchange",
+    "pages": [14, 16]
+  }
+]
+]</pre>
+                <button class="copy-button" onclick="copyPrompt()">Copy Prompt</button>
+            </div>
+            <div style="margin-top: 10px;">
+                <a href="https://gemini.google.com/app" target="_blank" style="color: #007bff; text-decoration: none;">
+                    Use Gemini AI to generate JSON configuration
+                </a>
+            </div>
+        </div>
+        <textarea id="json-input" rows="10" placeholder="Paste your JSON configuration here..."></textarea>
+        <div id="json-error" class="error-message" style="display: none;"></div>
+    </div>
     <div id="drop-area">
         <form class="my-form">
             <p>Upload PDF files using the file dialog or by dragging and dropping them onto the dashed region</p>
@@ -169,6 +329,120 @@
         const compressImagesCheckbox = document.getElementById('compress-images-checkbox');
         const maxResolutionInput = document.getElementById('max-resolution-input');
         const maxSizeInput = document.getElementById('max-size-input');
+        const modeSelector = document.querySelectorAll('input[name="mode"]');
+        const jsonInputContainer = document.getElementById('json-input-container');
+        const jsonInput = document.getElementById('json-input');
+        const jsonError = document.getElementById('json-error');
+
+        // Add mode switching functionality
+        modeSelector.forEach(radio => {
+            radio.addEventListener('change', function() {
+                if (this.value === 'json') {
+                    jsonInputContainer.style.display = 'block';
+                    dropArea.style.display = 'none';
+                    fileList.style.display = 'none';
+                    clearFilesButton.style.display = 'none';
+                    inverseFilesButton.style.display = 'none';
+                    // Hide specified settings in JSON mode
+                    document.getElementById('combine-slides').style.display = 'none';
+                    document.getElementById('combine-similar').style.display = 'none';
+                    document.getElementById('remove-incremental').style.display = 'none';
+                } else {
+                    jsonInputContainer.style.display = 'none';
+                    dropArea.style.display = 'block';
+                    fileList.style.display = 'block';
+                    clearFilesButton.style.display = 'inline-block';
+                    inverseFilesButton.style.display = 'inline-block';
+                    // Show all settings in automatic mode
+                    document.getElementById('combine-slides').style.display = 'block';
+                    document.getElementById('combine-similar').style.display = 'block';
+                    document.getElementById('remove-incremental').style.display = 'block';
+                }
+            });
+        });
+
+        // Function to copy the AI prompt
+        function copyPrompt() {
+            const promptText = document.getElementById('ai-prompt').textContent;
+            
+            // Try using the Clipboard API first
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(promptText).then(() => {
+                    updateCopyButton();
+                }).catch(() => {
+                    fallbackCopyToClipboard(promptText);
+                });
+            } else {
+                fallbackCopyToClipboard(promptText);
+            }
+        }
+
+        // Fallback method using a temporary textarea
+        function fallbackCopyToClipboard(text) {
+            // Create a temporary textarea element
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            
+            // Make it invisible
+            textarea.style.position = 'fixed';
+            textarea.style.left = '-999999px';
+            textarea.style.top = '-999999px';
+            
+            // Add it to the document
+            document.body.appendChild(textarea);
+            
+            // Select and copy the text
+            textarea.focus();
+            textarea.select();
+            
+            try {
+                document.execCommand('copy');
+                updateCopyButton();
+            } catch (err) {
+                console.error('Failed to copy text: ', err);
+            }
+            
+            // Clean up
+            document.body.removeChild(textarea);
+        }
+
+        // Update the copy button text
+        function updateCopyButton() {
+            const button = document.querySelector('.copy-button');
+            const originalText = button.textContent;
+            button.textContent = 'Copied!';
+            setTimeout(() => {
+                button.textContent = originalText;
+            }, 2000);
+        }
+
+        // Function to validate JSON
+        function validateJSON(jsonString) {
+            try {
+                const json = JSON.parse(jsonString);
+                if (!Array.isArray(json)) {
+                    throw new Error('JSON must be an array');
+                }
+                for (const item of json) {
+                    if (!item.title || typeof item.title !== 'string') {
+                        throw new Error('Each item must have a "title" string property');
+                    }
+                    if (!item.pages || !Array.isArray(item.pages)) {
+                        throw new Error('Each item must have a "pages" array property');
+                    }
+                    for (const page of item.pages) {
+                        if (typeof page !== 'number' || !Number.isInteger(page)) {
+                            throw new Error('Page numbers must be integers');
+                        }
+                    }
+                }
+                return json;
+            } catch (error) {
+                jsonError.textContent = `Invalid JSON: ${error.message}`;
+                jsonError.style.display = 'block';
+                return null;
+            }
+        }
 
         // Event listeners for drag and drop
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -368,19 +642,187 @@
 
         async function generateAnkiDecks() {
             updateProgress("Processing PDFs...", 0);
-            statsArea.innerHTML = ''; // Clear previous stats
-            removedSlidesInfo.innerHTML = ''; // Clear previous removed slides info
-            document.getElementById('removed-slides-summary').innerHTML = ''; // Clear previous summary
-            downloadArea.innerHTML = ''; // Clear previous download links
+            statsArea.innerHTML = '';
+            removedSlidesInfo.innerHTML = '';
+            document.getElementById('removed-slides-summary').innerHTML = '';
+            downloadArea.innerHTML = '';
             
-            // Show or hide the removed slides container based on checkbox
-            const removedSlidesContainer = document.getElementById('removed-slides-container');
-            if (removeIncrementalCheckbox.checked) {
-                removedSlidesContainer.style.display = 'block';
+            const selectedMode = document.querySelector('input[name="mode"]:checked').value;
+            
+            if (selectedMode === 'json') {
+                const jsonString = jsonInput.value.trim();
+                if (!jsonString) {
+                    jsonError.textContent = 'Please enter a JSON configuration';
+                    jsonError.style.display = 'block';
+                    return;
+                }
+                
+                const jsonConfig = validateJSON(jsonString);
+                if (!jsonConfig) {
+                    return;
+                }
+                
+                // Process JSON mode
+                await processJSONMode(jsonConfig);
             } else {
-                removedSlidesContainer.style.display = 'none';
+                // Process automatic mode
+                await processAutomaticMode();
+            }
+        }
+
+        // Function to process JSON mode
+        async function processJSONMode(jsonConfig) {
+            if (pdfs.length !== 1) {
+                jsonError.textContent = 'JSON mode requires exactly one PDF file';
+                jsonError.style.display = 'block';
+                return;
             }
 
+            const pdf = pdfs[0];
+            const pdfDoc = await pdfjsLib.getDocument(URL.createObjectURL(pdf)).promise;
+            
+            // Create model and deck
+            const m = new Model({
+                name: "Basic with Image and Order",
+                id: "1543634829845",
+                flds: [
+                    { name: "Order" },
+                    { name: "Front" },
+                    { name: "Back" },
+                    { name: "BackContent" },
+                    { name: "Text" },
+                ],
+                req: [[0, "all", [0]]],
+                tmpls: [
+                    {
+                        name: "Card 1",
+                        qfmt: "{{Front}}",
+                        afmt: "{{FrontSide}}<hr id=answer>{{Back}}<br><div class=\"back-content\">{{BackContent}}</div>",
+                    }
+                ],
+                css: `
+                .card {
+                    font-family: arial;
+                    font-size: 20px;
+                    text-align: center;
+                    color: black;
+                    background-color: white;
+                }
+                .back-content {
+                    font-size: 16px;
+                    display: inline-block;
+                    text-align: left;
+                    width: 100%;
+                    max-width: 500px;
+                    line-height: 1.6;
+                    margin: 0 auto;
+                }
+                h2 {
+                    display: inline;
+                }
+                `,
+            });
+
+            const deckName = pdf.name.replace(/\.[^/.]+$/, "");
+            const deckId = Date.now();
+            const d = new Deck(deckId, deckName);
+
+            const notes = [];
+            const cardStats = [];
+
+            for (const section of jsonConfig) {
+                const sectionTitle = section.title;
+                const pages = section.pages;
+                
+                for (const pageNum of pages) {
+                    if (pageNum < 1 || pageNum > pdfDoc.numPages) {
+                        jsonError.textContent = `Invalid page number ${pageNum}`;
+                        jsonError.style.display = 'block';
+                        return;
+                    }
+
+                    const page = await pdfDoc.getPage(pageNum);
+                    const textContent = await page.getTextContent();
+                    const scale = 2;
+                    const viewport = page.getViewport({ scale });
+
+                    // Process the page content
+                    const cleanedItems = textContent.items.filter(item => item.str.trim() !== '' && /[a-zA-Z0-9\s\-]/.test(item.str));
+                    if (cleanedItems.length <= 1) continue;
+
+                    // Create canvas and render page
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    await page.render({ canvasContext: context, viewport }).promise;
+
+                    let imageData = canvas.toDataURL('image/jpeg', 0.9);
+                    if (compressImagesCheckbox.checked) {
+                        const response = await fetch(imageData);
+                        const blob = await response.blob();
+                        const options = {
+                            maxSizeMB: maxSizeInput.value / 1024,
+                            maxWidthOrHeight: maxResolutionInput.value,
+                            useWebWorker: true,
+                        };
+                        const compressedImage = await imageCompression(blob, options);
+                        const reader = new FileReader();
+                        reader.readAsDataURL(compressedImage);
+                        await new Promise(resolve => reader.onload = resolve);
+                        imageData = reader.result;
+                    }
+
+                    // Create note
+                    const currentDate = new Date();
+                    const orderField = `${currentDate.getTime()}${pageNum.toString().padStart(3, '0')}`;
+                    const currentSlideContent = cleanedItems.map(item => item.str).join(' ');
+                    
+                    notes.push({
+                        key: sectionTitle,
+                        order: orderField,
+                        header: sectionTitle,
+                        imageHtml: `<img src="${imageData}">`,
+                        backContent: '',
+                        text: includeTextCheckbox.checked ? currentSlideContent : ''
+                    });
+                    
+                    cardStats.push([sectionTitle, 1, pageNum]);
+                }
+            }
+
+            // Add notes to deck
+            for (const { order, header, imageHtml, backContent, text } of notes) {
+                d.addNote(m.note([order, header, imageHtml, backContent, text]));
+            }
+
+            // Create and save the deck
+            const p = new Package();
+            p.addDeck(d);
+            const apkgArrayBuffer = await p.writeToFile(`${deckName}.apkg`);
+
+            // Create download link
+            const blob = new Blob([apkgArrayBuffer], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const downloadLink = document.createElement('a');
+            downloadLink.href = url;
+            downloadLink.download = `${deckName}.apkg`;
+            downloadLink.textContent = `Download ${deckName}.apkg`;
+            downloadArea.appendChild(downloadLink);
+
+            // Update stats
+            updateStats(deckName, notes.length, cardStats, [], pdfDoc.numPages);
+            updateProgress("Anki deck generated!", 100);
+        }
+
+        // Rename the existing generateAnkiDecks function to processAutomaticMode
+        async function processAutomaticMode() {
+            updateProgress("Processing PDFs...", 0);
+            statsArea.innerHTML = '';
+            removedSlidesInfo.innerHTML = '';
+            document.getElementById('removed-slides-summary').innerHTML = '';
+            downloadArea.innerHTML = '';
+            
             const numberDecks = numberDecksCheckbox.checked;
             let startIndex = parseInt(startIndexInput.value);
             const compressImages = compressImagesCheckbox.checked;
@@ -688,7 +1130,7 @@
             updateProgress("All Anki decks generated!", 100);
         }
 
-function showSnackbar(msg) {
+        function showSnackbar(msg) {
             var x = document.getElementById("snackbar");
             x.innerHTML = msg;
             x.className = "show";
@@ -725,6 +1167,19 @@ function showSnackbar(msg) {
                     content.style.display = "block";
                 }
             });
+        }
+
+        // Add this function before the end of the script tag
+        function togglePrompt() {
+            const prompt = document.getElementById('ai-prompt');
+            const button = document.querySelector('.toggle-prompt-button');
+            if (prompt.style.display === 'none') {
+                prompt.style.display = 'block';
+                button.textContent = 'Hide Prompt';
+            } else {
+                prompt.style.display = 'none';
+                button.textContent = 'Show Prompt';
+            }
         }
 
     </script>
