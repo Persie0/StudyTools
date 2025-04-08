@@ -152,7 +152,7 @@
                 <button class="toggle-prompt-button" onclick="togglePrompt()">Show Prompt</button>
                 <pre id="ai-prompt" style="display: none;">
                     Task:
-                    Analyze the provided slide presentation and structure its content for efficient Anki card creation.
+                    Analyze the provided slide presentation and structure its content for efficient Anki card creation. Respond in the language the slides are in.
                     
                     Step 1: Organize Slides into Logical Sections
                     
@@ -186,8 +186,12 @@
                         "pages": [14, 16]
                       }
                     ]
+
+if there are multiple slides create new json response for each.
+
 </pre>
                 <button class="copy-button" onclick="copyPrompt()">Copy Prompt</button>
+                <a href="https://chat.deepseek.com/a/chat" target="_blank" class="deepseek-link">Open DeepSeek Chat</a>
             </div>
         </div>
         <textarea id="json-input" rows="10" placeholder="Paste your JSON configuration here..."></textarea>
@@ -328,8 +332,7 @@
                     // Hide specified settings in JSON mode
                     document.getElementById('combine-slides').style.display = 'none';
                     document.getElementById('combine-similar').style.display = 'none';
-                    // Keep remove incremental checkbox visible
-                    document.getElementById('remove-incremental').style.display = 'block';
+                    document.getElementById('remove-incremental').style.display = 'none';
                     // Update file input to accept only one file
                     fileInput.multiple = false;
                     // Update drop area text

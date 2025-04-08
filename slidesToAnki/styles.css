@@ -226,3 +226,133 @@ text-decoration: underline;
     max-height: 200px;
     object-fit: contain;
 }
+
+.removed-slides-list {
+    list-style-type: none;
+    padding-left: 0;
+}
+
+.removed-slides-list li {
+    background-color: #ffebee;
+    border-left: 3px solid #f44336;
+    padding: 5px 10px;
+    margin-bottom: 5px;
+    border-radius: 3px;
+}
+
+#removed-slides-container {
+    margin-top: 20px;
+    padding: 10px;
+    background-color: #f9f9f9;
+    border-radius: 5px;
+    border: 1px solid #ddd;
+}
+
+#removed-slides-summary {
+    font-weight: bold;
+    font-size: 1.1em;
+    background-color: #fff8e1;
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 15px;
+    border: 1px solid #ffe082;
+}
+
+#mode-selector {
+    margin: 20px 0;
+    padding: 10px;
+    background-color: #f8f9fa;
+    border-radius: 5px;
+    border: 1px solid #dee2e6;
+}
+
+#mode-selector label {
+    margin-right: 20px;
+    cursor: pointer;
+}
+
+#json-input-container {
+    margin: 20px 0;
+    padding: 15px;
+    background-color: #fff;
+    border-radius: 5px;
+    border: 1px solid #dee2e6;
+}
+
+#json-input {
+    width: 100%;
+    padding: 10px;
+    margin: 10px 0;
+    font-family: monospace;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    resize: vertical;
+}
+
+.error-message {
+    color: #dc3545;
+    margin: 10px 0;
+    padding: 10px;
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    border-radius: 4px;
+}
+
+.prompt-container {
+    position: relative;
+    margin: 10px 0;
+}
+
+.toggle-prompt-button {
+    padding: 5px 10px;
+    background-color: #6c757d;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-bottom: 10px;
+}
+
+.toggle-prompt-button:hover {
+    background-color: #5a6268;
+}
+
+.copy-button {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    padding: 5px 10px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.copy-button:hover {
+    background-color: #0056b3;
+}
+
+.deepseek-link {
+    display: inline-block;
+    margin-left: 10px;
+    padding: 5px 10px;
+    background-color: #28a745;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+}
+
+.deepseek-link:hover {
+    background-color: #218838;
+}
+
+#ai-prompt {
+    background-color: #f8f9fa;
+    padding: 15px;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+    white-space: pre-wrap;
+    font-family: monospace;
+    margin: 0;
+}
