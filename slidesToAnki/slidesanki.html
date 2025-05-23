@@ -675,6 +675,10 @@ if there are multiple slides create new json response for each.
             const pdf = pdfs[0];
             const pdfDoc = await pdfjsLib.getDocument(URL.createObjectURL(pdf)).promise;
             
+            // Generate a single timestamp for all notes
+            const currentDate = new Date();
+            const baseTimestamp = currentDate.getTime();
+            
             // Create model and deck
             const m = new Model({
                 name: "Basic with Image and Order",
@@ -820,8 +824,7 @@ if there are multiple slides create new json response for each.
                 }
 
                 // Create note with combined content
-                const currentDate = new Date();
-                const orderField = `${currentDate.getTime()}${firstPageNum.toString().padStart(3, '0')}`;
+                const orderField = `${baseTimestamp}${firstPageNum.toString().padStart(3, '0')}`;
                 
                 notes.push({
                     key: title,
@@ -876,6 +879,10 @@ if there are multiple slides create new json response for each.
             const compressImages = compressImagesCheckbox.checked;
             const maxResolution = parseInt(maxResolutionInput.value);
             const maxSizeKB = parseInt(maxSizeInput.value);
+
+            // Generate a single timestamp for all notes
+            const currentDate = new Date();
+            const baseTimestamp = currentDate.getTime();
 
             for (let i = 0; i < pdfs.length; i++) {
                 const pdf = pdfs[i];
@@ -1062,9 +1069,8 @@ if there are multiple slides create new json response for each.
 
                     let noteKey = header;
 
-                    // Generate order field
-                    const currentDate = new Date();
-                    const orderField = `${currentDate.getTime()}${i + 1}${pageNum.toString().padStart(3, '0')}`;
+                    // Use the same timestamp for all notes, just append the page number
+                    const orderField = `${baseTimestamp}${pageNum.toString().padStart(3, '0')}`;
 
                     // Combine consecutive slides with the same title or similar titles
                     if (combineCheckbox.checked) {
