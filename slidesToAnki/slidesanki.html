@@ -818,7 +818,7 @@ if there are multiple slides create new json response for each.
                     previousSlideContent = currentSlideContent;
 
                     // Add image to combined HTML
-                    combinedImageHtml += `<img src="${imageData}"><br>`;
+                    combinedImageHtml += `<img src="${imageData}">${pageNum === pages[pages.length - 1] ? '' : '<br>'}`;
                     
                     // Add text content if enabled
                     if (includeTextCheckbox.checked) {
