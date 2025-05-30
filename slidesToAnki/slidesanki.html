@@ -885,13 +885,13 @@ if there are multiple slides create new json response for each.
             const maxResolution = parseInt(maxResolutionInput.value);
             const maxSizeKB = parseInt(maxSizeInput.value);
 
-            // Generate a single timestamp for all notes
-            const currentDate = new Date();
-            const baseTimestamp = currentDate.getTime();
-
             for (let i = 0; i < pdfs.length; i++) {
                 const pdf = pdfs[i];
                 const pdfDoc = await pdfjsLib.getDocument(URL.createObjectURL(pdf)).promise;
+
+                // Generate a new timestamp for each PDF
+                const currentDate = new Date();
+                const baseTimestamp = currentDate.getTime();
 
                 // Create a model with an image field and an order field
                 var m = new Model({
