@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Powered PDF to Anki Converter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/krmanik/genanki-js/dist/genanki.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/browser-image-compression/dist/browser-image-compression.js"></script>
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 20px;
+            background-color: #f9f9f9;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        #app-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        .config-section,
+        .upload-section,
+        .options-section,
+        .action-section {
+            margin-bottom: 20px;
+        }
+
+        label {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        input[type="password"],
+        input[type="text"],
+        input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .button,
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 18px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.2s;
+        }
+
+        .button:hover,
+        button:hover {
+            background-color: #0056b3;
+        }
+        
+        /* Style for the new Clear Key button */
+        #clear-key-button:hover {
+             background-color: #c82333;
+        }
+
+        button:disabled {
+            background-color: #c0c0c0;
+            cursor: not-allowed;
+        }
+
+        #drop-area {
+            border: 2px dashed #ddd;
+            border-radius: 4px;
+            padding: 30px;
+            text-align: center;
+            background-color: #fafafa;
+        }
+
+        #drop-area.highlight {
+            border-color: #007bff;
+            background-color: #f0f8ff;
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        .file-item {
+            background-color: #f4f4f4;
+            padding: 10px;
+            margin-top: 5px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #progress-area {
+            margin-top: 20px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            background-color: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            width: 0%;
+            height: 20px;
+            background-color: #4caf50;
+            transition: width 0.3s;
+        }
+
+        .error-message {
+            color: #dc3545;
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+        }
+
+        .info-box {
+            background-color: #e6f7ff;
+            border: 1px solid #b3e0ff;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+
+        #download-area a {
+            display: block;
+            background-color: #28a745;
+            color: white;
+            text-align: center;
+            padding: 12px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        #download-area a:hover {
+            background-color: #218838;
+        }
+
+        .options-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        /* Your existing styles */
+        .removed-slides-list {
+            list-style-type: none;
+            padding-left: 0;
+        }
+
+        .removed-slides-list li {
+            background-color: #ffebee;
+            border-left: 3px solid #f44336;
+            padding: 5px 10px;
+            margin-bottom: 5px;
+            border-radius: 3px;
+        }
+
+        #removed-slides-container {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+
+        #removed-slides-summary {
+            font-weight: bold;
+            font-size: 1.1em;
+            background-color: #fff8e1;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            border: 1px solid #ffe082;
+        }
+
+        .collapsible {
+            background-color: #eee;
+            color: #444;
+            cursor: pointer;
+            padding: 18px;
+            width: 100%;
+            border: none;
+            text-align: left;
+            outline: none;
+            font-size: 15px;
+            margin-top: 10px;
+        }
+
+        .active,
+        .collapsible:hover {
+            background-color: #ccc;
+        }
+
+        .content {
+            padding: 0 18px;
+            display: none;
+            overflow: hidden;
+            background-color: #f1f1f1;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app-container">
+        <h1>AI-Powered PDF to Anki Converter</h1>
+
+        <div class="info-box">
+            <p><b>How it works:</b>
+            <ol>
+                <li>Enter your Google AI (Gemini) API Key. (You can now save this to your browser).</li>
+                <li>Upload a single PDF file.</li>
+                <li>The app sends your PDF's text to Gemini to get a JSON list of grouped slides (removing
+                    titles/incrementals).</li>
+                <li>For each group, it sends the text to Gemini again to get a detailed explanation.</li>
+                <li>It then builds an Anki deck with the slide images on the "Back" and the AI explanation in the
+                    "BackContent" field.</li>
+            </ol>
+            </p>
+            <p>⚠️ <b>Warning:</b> This tool makes many API calls and may be slow or hit rate limits. Check your API
+                usage and costs.</p>
+        </div>
+
+        <div class="config-section">
+            <label for="api-key-input">Gemini API Key:</label>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                 <input type="password" id="api-key-input" placeholder="Enter your Google AI API Key here..." style="flex-grow: 1; width: auto; margin-bottom: 0;">
+                 <button id="save-key-button" style="padding: 10px 15px; white-space: nowrap;">Save Key</button>
+                 <button id="clear-key-button" style="padding: 10px 15px; background-color: #dc3545; white-space: nowrap;">Clear Key</button>
+            </div>
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" style="display: block; margin-top: 5px;">Get your API key here</a>
+        </div>
+
+        <div class="upload-section">
+            <div id="drop-area">
+                <form class="my-form">
+                    <p>Upload a single PDF file by dragging and dropping or clicking below</p>
+                    <input type="file" id="file-input" accept="application/pdf">
+                    <label for="file-input" class="button">Select PDF file</label>
+                </form>
+            </div>
+            <div id="file-list"></div>
+        </div>
+
+        <div class="options-section">
+            <h3>Options</h3>
+            <div class="options-grid">
+                <div>
+                    <input type="checkbox" id="compress-images-checkbox" checked>
+                    <label for="compress-images-checkbox">Compress images</label>
+                </div>
+                <div>
+                    <input type="checkbox" id="include-text-checkbox" checked>
+                    <label for="include-text-checkbox">Include original slide text (for search)</label>
+                </div>
+                <div>
+                    <label for="max-resolution-input">Max image width (px):</label>
+                    <input type="number" id="max-resolution-input" value="1800" min="1" style="width: 100px;">
+                </div>
+                <div>
+                    <label for="max-size-input">Max image size (kB):</label>
+                    <input type="number" id="max-size-input" value="400" min="1" style="width: 100px;">
+                </div>
+            </div>
+        </div>
+
+        <div class="action-section">
+            <button id="generate-button" disabled>Generate Anki Deck</button>
+        </div>
+
+        <div id="progress-area"></div>
+        <div id="json-error" class="error-message" style="display: none;"></div>
+        <div id="download-area"></div>
+
+        <button type="button" class="collapsible">Stats</button>
+        <div class="content">
+            <div id="stats-area"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- Setup Libraries ---
+        // The `initSqlJs` function is globally provided by all of the main dist files if loaded in the browser.
+        config = {
+            locateFile: filename => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${filename}`
+        }
+        var SQL;
+        initSqlJs(config).then(function (sql) {
+            SQL = sql;
+        });
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+        // --- Get DOM Elements ---
+        const dropArea = document.getElementById('drop-area');
+        const fileInput = document.getElementById('file-input');
+        const generateButton = document.getElementById('generate-button');
+        const fileList = document.getElementById('file-list');
+        const progressArea = document.getElementById('progress-area');
+        const statsArea = document.getElementById('stats-area');
+        const downloadArea = document.getElementById('download-area');
+        const apiKeyInput = document.getElementById('api-key-input');
+        // ADDED: Get new buttons
+        const saveKeyButton = document.getElementById('save-key-button');
+        const clearKeyButton = document.getElementById('clear-key-button');
+        const jsonError = document.getElementById('json-error');
+
+        // --- Options ---
+        const includeTextCheckbox = document.getElementById('include-text-checkbox');
+        const compressImagesCheckbox = document.getElementById('compress-images-checkbox');
+        const maxResolutionInput = document.getElementById('max-resolution-input');
+        const maxSizeInput = document.getElementById('max-size-input');
+
+        // --- State ---
+        let pdfFile = null;
+
+        // --- Event Listeners ---
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+        dropArea.addEventListener('drop', handleDrop, false);
+        fileInput.addEventListener('change', handleFiles, false);
+        generateButton.addEventListener('click', generateAnkiDecks, false);
+        apiKeyInput.addEventListener('input', checkReady);
+        // ADDED: Listeners for new buttons
+        saveKeyButton.addEventListener('click', saveApiKey);
+        clearKeyButton.addEventListener('click', clearApiKey);
+
+        // --- Initial Load ---
+        // ADDED: Load API key from localStorage on start
+        loadApiKey();
+
+        // --- Drag and Drop Handlers ---
+        function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+        function highlight() { dropArea.classList.add('highlight'); }
+        function unhighlight() { dropArea.classList.remove('highlight'); }
+        function handleDrop(e) { handleFiles(e.dataTransfer.files); }
+
+        function handleFiles(filesOrEvent) {
+            let files;
+            if (filesOrEvent instanceof Event) {
+                // This handles the <input type="file"> click
+                files = filesOrEvent.target.files;
+            } else {
+                // This handles the drag-and-drop
+                files = filesOrEvent;
+            }
+
+            if (files && files.length > 0) {
+                pdfFile = files[0]; // We only want the first file
+                updateFileList();
+                checkReady();
+            }
+        }
+        function updateFileList() {
+            fileList.innerHTML = '<h3>Selected File:</h3>';
+            if (pdfFile) {
+                const div = document.createElement('div');
+                div.className = 'file-item';
+                div.innerHTML = `
+                    <span>${pdfFile.name}</span>
+                    <span class"remove-file" style="cursor: pointer; color: red;" onclick="clearFile()">&#10005;</span>
+                `;
+                fileList.appendChild(div);
+            }
+        }
+
+        function clearFile() {
+            pdfFile = null;
+            fileList.innerHTML = '';
+            fileInput.value = ''; // Reset file input
+            checkReady();
+        }
+
+        function checkReady() {
+            generateButton.disabled = !(pdfFile && apiKeyInput.value.trim() !== '');
+        }
+
+        // --- ADDED: API Key Storage Functions ---
+        function saveApiKey() {
+            const apiKey = apiKeyInput.value.trim();
+            if (apiKey) {
+                localStorage.setItem('geminiAnkiApiKey', apiKey);
+                alert('API Key saved to browser storage.');
+            } else {
+                alert('Please enter an API key to save.');
+            }
+        }
+
+        function clearApiKey() {
+            localStorage.removeItem('geminiAnkiApiKey');
+            apiKeyInput.value = '';
+            checkReady();
+            alert('API Key cleared from browser storage.');
+        }
+
+        function loadApiKey() {
+            const savedKey = localStorage.getItem('geminiAnkiApiKey');
+            if (savedKey) {
+                apiKeyInput.value = savedKey;
+                checkReady(); // Check if we are ready to generate
+            }
+        }
+        
+        // --- Progress and Error Updates ---
+        function updateProgress(message, percentage) {
+            progressArea.innerHTML = `
+                <p>${message}</p>
+                <div class="progress-bar">
+                    <span class="progress-bar-fill" style="width: ${percentage}%;"></span>
+                </div>
+            `;
+        }
+
+        function showError(message) {
+            jsonError.textContent = message;
+            jsonError.style.display = 'block';
+            updateProgress("Error encountered.", 0);
+            generateButton.disabled = false; // Re-enable button on error
+        }
+
+        // --- Main Anki Generation Logic ---
+        async function generateAnkiDecks() {
+            // 1. Reset UI and get inputs
+            generateButton.disabled = true;
+            jsonError.style.display = 'none';
+            statsArea.innerHTML = '';
+            downloadArea.innerHTML = '';
+            updateProgress("Starting...", 0);
+
+            if (!pdfFile || !apiKeyInput.value.trim()) {
+                showError("Please provide both a PDF file and a Gemini API Key.");
+                return;
+            }
+
+            const apiKey = apiKeyInput.value.trim();
+            let pdfDoc;
+
+            try {
+                // 2. Load PDF
+                updateProgress("Loading PDF...", 5);
+                pdfDoc = await pdfjsLib.getDocument(URL.createObjectURL(pdfFile)).promise;
+
+                // 3. Extract all text for grouping
+                updateProgress("Extracting text from all pages...", 10);
+                const allPagesText = await extractAllText(pdfDoc);
+
+                // 4. Call Gemini for grouping and filtering
+                updateProgress("Asking AI to group and filter slides...", 20);
+                const groupingJSON = await callGeminiForGrouping(allPagesText, apiKey);
+
+                if (!groupingJSON || !Array.isArray(groupingJSON)) {
+                    showError("AI did not return valid JSON for grouping. Check console for details.");
+                    console.error("Invalid JSON response:", groupingJSON);
+                    return;
+                }
+
+                // 5. Create the Anki deck
+                updateProgress("AI grouping received. Starting deck generation...", 30);
+                await createDeckFromConfig(pdfDoc, groupingJSON, apiKey);
+
+                updateProgress("Anki deck generated!", 100);
+
+            } catch (error) {
+                showError(`An error occurred: ${error.message}`);
+                console.error(error);
+            } finally {
+                generateButton.disabled = false;
+            }
+        }
+
+        /**
+         * Extracts text from every page of the PDF.
+         */
+        async function extractAllText(pdfDoc) {
+            let allText = '';
+            for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+                const page = await pdfDoc.getPage(pageNum);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str).join(' ');
+                allText += `\n\n--- PAGE ${pageNum} ---\n${pageText}\n`;
+            }
+            return allText;
+        }
+
+        /**
+         * First Gemini call: To group slides and remove unwanted ones.
+         */
+        async function callGeminiForGrouping(allPagesText, apiKey) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
+
+            const prompt = `
+                Task:
+                Analyze the provided text content from a slide presentation and structure it for Anki card creation.
+                The text is formatted with "--- PAGE [number] ---" delimiters.
+                
+                Step 1: Identify Logical Sections
+                Group pages together that cover a single, distinct topic.
+                
+                Step 2: Filter Unwanted Slides
+                - REMOVE any slides that are just title pages, section dividers, "Agenda", "Outline", "Thank you", or "Questions?" slides.
+                - For incremental slides (where one slide builds on the previous one), identify the *final* slide in that sequence and include ONLY that final slide in the "pages" array.
+                
+                Step 3: Output Format (JSON)
+                Return ONLY a valid JSON array following this structure. Do not include any other text or markdown fences.
+                
+                [
+                  {
+                    "title": "A descriptive title for this section",
+                    "pages": [/* array of page numbers (integers) in this group */]
+                  },
+                  {
+                    "title": "Title for the next section",
+                    "pages": [/* ... */]
+                  }
+                ]
+                
+                Here is the slide text:
+                ${allPagesText}
+            `;
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                const errorBody = await response.json();
+                throw new Error(`Gemini API error (Grouping): ${errorBody.error.message}`);
+            }
+
+            const data = await response.json();
+
+            // --- FIX: Clean up markdown fences and parse the JSON string ---
+            let jsonString = data.candidates[0].content.parts[0].text;
+            
+            if (typeof jsonString === 'string') {
+                const firstBrace = jsonString.indexOf('[');
+                const firstCurly = jsonString.indexOf('{');
+                
+                let start = -1;
+                
+                // Find the first valid JSON start character
+                if (firstBrace === -1 && firstCurly === -1) {
+                    console.error("AI response did not contain JSON:", jsonString);
+                    throw new Error("AI response did not contain a JSON array or object.");
+                }
+
+                if (firstBrace === -1) start = firstCurly;
+                else if (firstCurly === -1) start = firstBrace;
+                else start = Math.min(firstBrace, firstCurly);
+
+                // Find the last valid JSON end character
+                const lastBrace = jsonString.lastIndexOf(']');
+                const lastCurly = jsonString.lastIndexOf('}');
+                
+                let end = Math.max(lastBrace, lastCurly);
+
+                if (start === -1 || end === -1 || end < start) {
+                     console.error("AI response had mismatched delimiters:", jsonString);
+                     throw new Error("AI response had mismatched JSON delimiters.");
+                }
+
+                // Extract the JSON substring
+                jsonString = jsonString.substring(start, end + 1);
+            } else {
+                // If it's not a string, it might be already-parsed JSON
+                // In this case, we just return it directly
+                return jsonString;
+            }
+
+            try {
+                // Now, parse the cleaned string
+                return JSON.parse(jsonString);
+            } catch (e) {
+                console.error("Failed to parse cleaned JSON string:", jsonString);
+                throw new Error(`AI returned malformed JSON after cleaning: ${e.message}`);
+            }
+            // --- End Fix ---
+        }
+
+        /**
+         * Creates the .apkg file based on the AI's grouping.
+         */
+        async function createDeckFromConfig(pdfDoc, jsonConfig, apiKey) {
+            // --- Setup Anki Model and Deck ---
+            const m = new Model({
+                name: "AI Slides - " + Date.now(),
+                id: "1543634829845", // Using the ID from your file
+                flds: [
+                    { name: "Order" },      // To keep slides in order
+                    { name: "Front" },      // Section Title
+                    { name: "Back" },       // Slide Image(s)
+                    { name: "BackContent" }, // AI-generated explanation
+                    { name: "Text" },       // Original slide text (for search)
+                ],
+                req: [[0, "all", [0]]],
+                tmpls: [{
+                    name: "Card 1",
+                    qfmt: "{{Front}}",
+                    afmt: "{{FrontSide}}<hr id=answer>{{Back}}<br><div class=\"back-content\">{{BackContent}}</div>",
+                }],
+                css: `
+                    .card { font-family: arial; font-size: 20px; text-align: center; color: black; background-color: white; }
+                    .back-content { font-size: 16px; display: inline-block; text-align: left; width: 100%; max-width: 700px; line-height: 1.6; margin: 10px auto; padding: 10px; background-color: #f9f9f9; border-radius: 5px; border: 1px solid #eee; }
+                    h2 { display: inline; }
+                    img { max-width: 95%; height: auto; }
+                `,
+            });
+
+            const deckName = pdfFile.name.replace(/\.[^/.]+$/, "");
+            const d = new Deck(Date.now(), deckName);
+            const baseTimestamp = new Date().getTime();
+            const cardStats = [];
+
+            // --- Process Each Section from JSON ---
+            let sectionIndex = 0;
+            for (const section of jsonConfig) {
+                if (!section.pages || section.pages.length === 0) continue;
+
+                const progress = 30 + (sectionIndex / jsonConfig.length) * 60;
+                updateProgress(`Processing section "${section.title}"...`, progress);
+
+                // 1. Render images for all pages in this group
+                const { combinedImageHtml, pageNum } = await renderImagesForPages(pdfDoc, section.pages);
+
+                // 2. Extract text for all pages in this group
+                const groupedText = await extractTextForPages(pdfDoc, section.pages);
+
+                // 3. Call Gemini for explanation
+                updateProgress(`Asking AI to explain "${section.title}"...`, progress + 5);
+                const explanation = await callGeminiForExplanation(groupedText, apiKey);
+
+                // 4. Create Anki Note
+                const orderField = `${baseTimestamp}${sectionIndex.toString().padStart(4, '0')}`;
+                const textSearchField = includeTextCheckbox.checked ? groupedText : '';
+
+                d.addNote(m.note([
+                    orderField,        // Order
+                    section.title,     // Front
+                    combinedImageHtml, // Back (Images)
+                    explanation,       // BackContent (AI)
+                    textSearchField    // Text (Search)
+                ]));
+
+                cardStats.push([section.title, section.pages.length, pageNum]);
+                sectionIndex++;
+            }
+
+            // --- Save the .apkg file ---
+            updateProgress("Creating .apkg file...", 95);
+            const p = new Package();
+            p.addDeck(d);
+            const apkgArrayBuffer = await p.writeToFile(`${deckName}.apkg`);
+
+            // Create download link
+            const blob = new Blob([apkgArrayBuffer], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const downloadLink = document.createElement('a');
+            downloadLink.href = url;
+            downloadLink.download = `${deckName}.apkg`;
+            downloadLink.textContent = `Download ${deckName}.apkg`;
+            downloadArea.appendChild(downloadLink);
+
+            updateStats(deckName, jsonConfig.length, cardStats, pdfDoc.numPages);
+        }
+
+        /**
+         * Renders the specified pages into a combined string of <img> tags.
+         */
+        async function renderImagesForPages(pdfDoc, pagesArray) {
+            let combinedImageHtml = '';
+            const compressImages = compressImagesCheckbox.checked;
+            const maxResolution = parseInt(maxResolutionInput.value);
+            const maxSizeKB = parseInt(maxSizeInput.value);
+
+            for (const pageNum of pagesArray) {
+                const page = await pdfDoc.getPage(pageNum);
+                const scale = 2;
+                const viewport = page.getViewport({ scale });
+
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                await page.render({ canvasContext: context, viewport }).promise;
+
+                let imageData = canvas.toDataURL('image/jpeg', 0.9);
+
+                if (compressImages) {
+                    const response = await fetch(imageData);
+                    const blob = await response.blob();
+                    const options = {
+                        maxSizeMB: maxSizeKB / 1024,
+                        maxWidthOrHeight: maxResolution,
+                        useWebWorker: true,
+                    };
+                    const compressedImage = await imageCompression(blob, options);
+                    const reader = new FileReader();
+                    reader.readAsDataURL(compressedImage);
+                    await new Promise(resolve => reader.onload = resolve);
+                    imageData = reader.result;
+                }
+
+                combinedImageHtml += `<img src="${imageData}">${pageNum === pagesArray[pagesArray.length - 1] ? '' : '<br>'}`;
+            }
+            return { combinedImageHtml, pageNum: pagesArray[0] };
+        }
+
+        /**
+         * Extracts text from a specific list of pages.
+         */
+        async function extractTextForPages(pdfDoc, pagesArray) {
+            let groupedText = '';
+            for (const pageNum of pagesArray) {
+                const page = await pdfDoc.getPage(pageNum);
+                const textContent = await page.getTextContent();
+                groupedText += `\n--- Slide (Page ${pageNum}) ---\n` + textContent.items.map(item => item.str).join(' ');
+            }
+            return groupedText.trim();
+        }
+
+        /**
+         * Second Gemini call: To explain the content of a group of slides.
+         */
+        async function callGeminiForExplanation(groupedText, apiKey) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
+
+            const prompt = `
+                Task:
+                You will be given the text from a set of presentation slides on a specific topic.
+                Your task is to provide a clear, comprehensive, and well-structured explanation of the content, as if you were teaching it to a student.
+                
+                Instructions:
+                - Do not just repeat the slide's bullet points.
+                - Elaborate on the concepts, connect the ideas, and provide context.
+                - Use paragraphs for easy reading.
+                - You may use simple markdown (like bullet points or bold text) to structure your explanation.
+                - Respond ONLY with the explanation text. Do not add any preamble like "Here is the explanation:".
+                
+                Here is the slide text:
+                ${groupedText}
+            `;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }]
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorBody = await response.json();
+                    throw new Error(`Gemini API error (Explanation): ${errorBody.error.message}`);
+                }
+
+                const data = await response.json();
+                return data.candidates[0].content.parts[0].text;
+            } catch (error) {
+                console.error("Error in explanation call:", error);
+                return `(AI explanation failed: ${error.message})`;
+            }
+        }
+
+        // --- Utility Functions from Original File ---
+        function updateStats(deckName, totalCards, cardStats, totalPages) {
+            let statsHTML = `<h3>Stats for ${deckName}</h3>`;
+            statsHTML += `<p>Total PDF pages: ${totalPages}</p>`;
+            statsHTML += `<p>Total Anki cards created: ${totalCards}</p>`;
+            statsHTML += `<h4>Card details (based on AI grouping):</h4>`;
+            statsHTML += `<ul>`;
+            for (const [title, imageCount, pageNum] of cardStats) {
+                statsHTML += `<li>"${title}": ${imageCount} slide${imageCount !== 1 ? 's' : ''} (starting from page ${pageNum})</li>`;
+            }
+            statsHTML += `</ul>`;
+            statsArea.innerHTML = statsHTML;
+        }
+
+        var coll = document.getElementsByClassName("collapsible");
+        for (let i = 0; i < coll.length; i++) {
+            coll[i].addEventListener("click", function () {
+                this.classList.toggle("active");
+                var content = this.nextElementSibling;
+                if (content.style.display === "block") {
+                    content.style.display = "none";
+                } else {
+                    content.style.display = "block";
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>
