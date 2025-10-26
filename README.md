@@ -14,19 +14,27 @@ A collection of browser-based PDF manipulation tools designed to enhance your st
 
 ## Available Tools
 
-### 1. PDF Chapter Splitter
+### 1. AI-Powered PDF to Anki Converter
+Convert PDF presentations into Anki flashcards with AI-powered content analysis.
+- Automatically groups related slides
+- Generates concise explanations with Google's Gemini AI
+- Creates structured Anki cards with key concepts
+- Processes content directly in your browser
+- [Try AI Anki Converter](./slidesToAnki/gemini-anki.html)
+
+### 2. PDF Chapter Splitter
 Split large PDFs into smaller chapter-based files - perfect for working with AI tools that have token limits.
 - Automatic chapter detection from PDF outline
 - Adjustable splitting depth
 - Results delivered as ZIP file
 - [Try PDF Chapter Splitter](./pdfSplitter/pdf-splitter.html)
 
-### 2. PDF Slides to Anki Converter
+### 3. PDF Slides to Anki Converter
 Transform your PDF presentations into Anki flashcards automatically.
 - Creates cards with slide title as front and full slide as back
 - Option to merge slides with identical titles
 - Real-time progress tracking
-- [Try Slides to Anki Converter](./slidesToAnki/slidesanki.html)
+- [Try Basic Slides to Anki Converter](./slidesToAnki/slidesanki.html)
 
 ### 3. PDF Page Stripper
 Clean up incrementally built presentation slides by removing intermediate steps.

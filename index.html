@@ -115,6 +115,7 @@
         
         <div class="quick-links">
             <a href="./pdfSplitter/pdf-splitter.html">Chapter Splitter</a>
+            <a href="./slidesToAnki/gemini-anki.html">AI Anki Converter</a>
             <a href="./slidesToAnki/slidesanki.html">Slides to Anki</a>
             <a href="./pdfPageStripper/stripper.html">Page Stripper</a>
             <a href="./jsonToAnki/jsonToAnki.html">JSON to Anki</a>
@@ -195,6 +196,28 @@
                 <p><strong>Best for:</strong> Presentations with step-by-step slide builds or animations</p>
             </div>
             <a href="./pdfPageStripper/stripper.html" class="btn">Try Page Stripper</a>
+        </div>
+
+        <div class="tool-card">
+            <h2>AI-Powered PDF to Anki Converter</h2>
+            <p>Convert PDFs to Anki flashcards with AI-powered content analysis.</p>
+            <ul class="features">
+                <li>Automatically groups related slides</li>
+                <li>Generates concise explanations with Gemini AI</li>
+                <li>Creates structured Anki cards with key concepts</li>
+                <li>Processes content directly in your browser</li>
+            </ul>
+            <a href="./slidesToAnki/gemini-anki.html" class="btn">Try AI Anki Converter</a>
+            <button class="usage-toggle" onclick="toggleUsage('ai-anki-usage')">Show Usage</button>
+            <div class="usage-details" id="ai-anki-usage">
+                <h3>How to use:</h3>
+                <ol>
+                    <li>Click "Choose PDF" or drag and drop your PDF file</li>
+                    <li>Enter your Gemini API key (stored locally in your browser)</li>
+                    <li>Click "Generate Anki Deck" and wait for processing</li>
+                    <li>Download the generated .apkg file and import it into Anki</li>
+                </ol>
+            </div>
         </div>
 
         <div class="tool-card">

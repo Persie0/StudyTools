@@ -528,7 +528,14 @@
                 Group pages together that cover a single, distinct topic.
                 
                 Step 2: Filter Unwanted Slides
-                - REMOVE any slides that are just title pages, section dividers, "Agenda", "Outline", "Thank you", or "Questions?" slides.
+                - Your filtering must be strict. REMOVE any slides that are purely administrative or structural.
+                - This includes, but is not limited to:
+                  - Main title pages (e.g., "Presentation Title", "By [Author]")
+                  - Section divider slides (e.g., "Part 2: The Next Step")
+                  - "Agenda", "Outline", or "Overview" slides.
+                  - "Learning Objectives" slides.
+                  - "Thank you", "Questions?", or "Contact Information" slides.
+                  - Any slide with almost no content (e.g., just a title and no body, or a single image).
                 - For incremental slides (where one slide builds on the previous one), identify the *final* slide in that sequence and include ONLY that final slide in the "pages" array.
                 
                 Step 3: Output Format (JSON)
@@ -771,9 +778,12 @@
                 Instructions:
                 - Do not just repeat the slide's bullet points.
                 - Elaborate on the concepts, connect the ideas, and provide context.
-                - Use paragraphs for easy reading.
-                - You may use simple markdown (like bullet points or bold text) to structure your explanation.
-                - Respond ONLY with the explanation text. Do not add any preamble like "Here is the explanation:".
+                - Structure your explanation using simple HTML tags like <p>, <ul>, <li>, <b>, <i>, and <h2>.
+                - **Crucially for formulas (Anki/MathJax format):**
+                    - For **inline math**, use the format: \\(...\\) (e.g., \\( E = mc^2 \\)).
+                    - For **display/block math**, use the format: \\[...\\] (e.g., \\[ \\sum_{i=1}^{n} i = \\frac{n(n+1)}{2} \\]).
+                    - **DO NOT** use single dollar signs ($...$) for math.
+                - Respond ONLY with the HTML-formatted explanation. Do not add any preamble like "Here is the explanation:", "Sure!", or markdown fences.
                 
                 Here is the slide text:
                 ${groupedText}
@@ -797,7 +807,7 @@
                 return data.candidates[0].content.parts[0].text;
             } catch (error) {
                 console.error("Error in explanation call:", error);
-                return `(AI explanation failed: ${error.message})`;
+                return `<p>(AI explanation failed: ${error.message})</p>`;
             }
         }
 
