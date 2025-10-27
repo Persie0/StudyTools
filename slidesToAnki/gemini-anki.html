@@ -325,7 +325,16 @@
                         <label for="input-file">Upload Full PDF (Slower, may be more accurate)</label>
                     </div>
                 </div>
-
+                
+                <div style="grid-column: 1 / -1; border-top: 1px solid #eee; padding-top: 15px; margin-top: 10px;">
+                    <label for="max-parallel-input">Max parallel tasks:</label>
+                    <input type="number" id="max-parallel-input" value="10" min="1" style="width: 100px;">
+                    <label for="max-parallel-input" style="font-weight: normal; display: inline;">(Limits concurrent AI calls/image renders to save memory)</label>
+                </div>
+                <div style="grid-column: 1 / -1; border-top: 1px solid #eee; padding-top: 15px; margin-top: 10px;">
+                    <input type="checkbox" id="detailed-grouping-checkbox">
+                    <label for="detailed-grouping-checkbox"><b>Enable detailed (smaller) slide grouping</b><br>(Creates more cards with fewer slides each. Good for long or dense PDFs.)</label>
+                </div>
                 <div style="grid-column: 1 / -1; background-color: #fff8e1; padding: 10px; border-radius: 4px; border: 1px solid #ffe082; margin-top: 10px;">
                     <input type="checkbox" id="slide-by-slide-checkbox">
                     <label for="slide-by-slide-checkbox"><b>Slide-by-slide annotation mode</b><br>(Adds explanations *below each slide* if needed, instead of one big explanation. Makes many more API calls.)</label>
@@ -377,9 +386,11 @@
         const maxResolutionInput = document.getElementById('max-resolution-input');
         const maxSizeInput = document.getElementById('max-size-input');
         const slideBySlideCheckbox = document.getElementById('slide-by-slide-checkbox');
+        const detailedGroupingCheckbox = document.getElementById('detailed-grouping-checkbox');
         const groupingModelSelect = document.getElementById('grouping-model-select');
         const groupingInputText = document.getElementById('input-text');
         const groupingInputFile = document.getElementById('input-file');
+        const maxParallelInput = document.getElementById('max-parallel-input'); // <-- ADDED
 
         // --- State ---
         let pdfFile = null;
@@ -404,7 +415,12 @@
         clearKeyButton.addEventListener('click', clearApiKeys); // Changed
 
         // Add listeners for all options
-        [compressImagesCheckbox, includeTextCheckbox, slideBySlideCheckbox, maxResolutionInput, maxSizeInput, groupingModelSelect, groupingInputText, groupingInputFile].forEach(el => {
+        [
+            compressImagesCheckbox, includeTextCheckbox, slideBySlideCheckbox, 
+            maxResolutionInput, maxSizeInput, groupingModelSelect, 
+            groupingInputText, groupingInputFile, detailedGroupingCheckbox,
+            maxParallelInput // <-- ADDED
+        ].forEach(el => { 
             el.addEventListener('change', saveOptions);
         });
 
@@ -490,8 +506,10 @@
                 maxResolution: maxResolutionInput.value,
                 maxSize: maxSizeInput.value,
                 slideBySlide: slideBySlideCheckbox.checked,
+                detailedGrouping: detailedGroupingCheckbox.checked,
                 groupingModel: groupingModelSelect.value,
-                groupingInput: groupingInputText.checked ? 'text' : 'file'
+                groupingInput: groupingInputText.checked ? 'text' : 'file',
+                maxParallel: maxParallelInput.value // <-- ADDED
             }));
         }
 
@@ -504,9 +522,11 @@
                     compressImagesCheckbox.checked = options.compressImages !== false; // default true
                     includeTextCheckbox.checked = options.includeText !== false; // default true
                     slideBySlideCheckbox.checked = options.slideBySlide === true; // default false
+                    detailedGroupingCheckbox.checked = options.detailedGrouping === true; // default false
                     if (options.maxResolution) maxResolutionInput.value = options.maxResolution;
                     if (options.maxSize) maxSizeInput.value = options.maxSize;
                     if (options.groupingModel) groupingModelSelect.value = options.groupingModel;
+                    if (options.maxParallel) maxParallelInput.value = options.maxParallel; // <-- ADDED
                     
                     if (options.groupingInput === 'file') {
                         groupingInputFile.checked = true;
@@ -598,7 +618,7 @@
                 }
 
                 updateProgress("AI grouping received. Starting deck generation...", 30);
-                await createDeckFromConfig(pdfDoc, groupingJSON); // apiKey removed
+                await createDeckFromConfig(pdfDoc, groupingJSON); // pdfDoc passed here
 
                 updateProgress("Anki deck generated!", 100);
 
@@ -631,25 +651,8 @@
 
         // --- New Countdown Timer ---
         async function showWaitingCountdown(totalWaitMs, baseMessage, percentage) {
-            let remainingMs = totalWaitMs;
-
-            return new Promise(resolve => {
-                const intervalId = setInterval(() => {
-                    remainingMs -= 1000;
-                    const remainingSeconds = Math.ceil(Math.max(0, remainingMs) / 1000);
-                    
-                    updateProgress(`${baseMessage} Time remaining: ${remainingSeconds}s...`, percentage);
-                    
-                    if (remainingMs <= 0) {
-                        clearInterval(intervalId);
-                        resolve();
-                    }
-                }, 1000);
-
-                // Show initial message immediately
-                const remainingSeconds = Math.ceil(Math.max(0, remainingMs) / 1000);
-                updateProgress(`${baseMessage} Time remaining: ${remainingSeconds}s...`, percentage);
-            });
+            updateProgress(`${baseMessage} Waiting for ${Math.ceil(totalWaitMs / 1000)}s...`, percentage);
+            await sleep(totalWaitMs);
         }
 
         // --- New Base64 Helper ---
@@ -677,6 +680,8 @@
                 throw new Error("API Key pool is empty.");
             }
 
+            let retryCount = 0;
+
             while (true) {
                 const now = Date.now();
                 
@@ -702,7 +707,7 @@
                     console.warn(`All keys busy/rate-limited. Waiting for ${waitMs / 1000}s...`);
                     
                     // Start the countdown
-                    await showWaitingCountdown(waitMs, "All keys busy. Pausing...", currentPercentage);
+                    await showWaitingCountdown(waitMs, `All keys busy. Pausing... (Retry #${retryCount})`, currentPercentage);
                     
                     // After countdown, restore original message and continue loop
                     updateProgress(currentProgressMessage, currentPercentage);
@@ -757,10 +762,11 @@
                         keyEntry.availableAt = Date.now() + waitMs;
                         
                         console.warn(`Model is overloaded for key ...${apiKey.slice(-4)}. Retrying after ${waitMs / 1000}s.`);
-                        updateProgress(`Model overloaded (Key: ...${apiKey.slice(-4)}). Trying next key...`, currentPercentage);
+                        updateProgress(`Model overloaded (Key: ...${apiKey.slice(-4)}). Trying next key... (Retry #${retryCount})`, currentPercentage);
                         await sleep(500); // Brief pause to show message
                         updateProgress(currentProgressMessage, currentPercentage); // Restore message
                         
+                        retryCount++;
                         continue; // Loop again to find a *different* key
                     }
 
@@ -781,10 +787,11 @@
                             
                             console.warn(`Gemini rate limit hit for key ...${apiKey.slice(-4)}. Setting cool-down for ${waitTimeS.toFixed(1)}s. Trying next key...`);
                             
-                            updateProgress(`Key ...${apiKey.slice(-4)} rate-limited. Trying next key...`, currentPercentage);
+                            updateProgress(`Key ...${apiKey.slice(-4)} rate-limited. Trying next key... (Retry #${retryCount})`, currentPercentage);
                             await sleep(500); // Brief pause to show message
                             updateProgress(currentProgressMessage, currentPercentage); // Restore message
                             
+                            retryCount++;
                             continue; // Loop again to find a *different* key
                         }
                     }
@@ -793,9 +800,10 @@
                     if (response.status === 400 || response.status === 403) {
                          keyEntry.availableAt = Date.now() + 86400000; // Disable for 24h
                          console.error(`API Key ...${apiKey.slice(-4)} is invalid or unauthorized. Disabling it for 24h. Error: ${errorMessage}`);
-                         updateProgress(`Key ...${apiKey.slice(-4)} is invalid. Trying next...`, currentPercentage);
+                         updateProgress(`Key ...${apiKey.slice(-4)} is invalid. Trying next... (Retry #${retryCount})`, currentPercentage);
                          await sleep(500);
                          updateProgress(currentProgressMessage, currentPercentage);
+                         retryCount++;
                          continue; // Try next key
                     }
 
@@ -806,6 +814,7 @@
                     // Penalize key for network errors too?
                     keyEntry.availableAt = Date.now() + 30000; // Wait 30s before retrying this key
                     console.warn(`Pausing key ...${apiKey.slice(-4)} for 30s due to network error.`);
+                    retryCount++;
                     continue; // Try next key
                 }
             }
@@ -819,15 +828,26 @@
             let prompt;
             let filePayload = null;
             const config = { responseMimeType: "application/json" };
+            const useDetailedGrouping = detailedGroupingCheckbox.checked; // <-- ADDED
+
+            // --- THIS BLOCK IS NEW/MODIFIED ---
+            const step1Instruction = useDetailedGrouping
+                ? `Step 1: Identify Logical Sections
+                - Your goal is to create **small, focused groups**.
+                - A group should ideally cover only **one or two key concepts** and be **1-4 slides long**.
+                - **Do NOT create large groups** (e.g., 10+ slides).
+                - It is better to have many small, specific groups than a few large, general ones.`
+                : `Step 1: Identify Logical Sections
+                Group pages together that cover a single, distinct topic.`;
+            // --- END MODIFIED BLOCK ---
 
             if (inputType === 'file') {
                 prompt = `
                 Task:
                 Analyze the provided PDF presentation and structure it for Anki card creation.
                 
-                Step 1: Identify Logical Sections
-                Group pages together that cover a single, distinct topic.
-                
+                ${step1Instruction}
+
                 Step 2: Filter Unwanted Slides
                 - Your filtering must be strict. REMOVE any slides that are purely administrative or structural.
                 - This includes, but is not limited to:
@@ -843,6 +863,8 @@
                 Return ONLY a valid JSON array following this structure. Do not include any other text or markdown fences.
                 The page numbers should be 1-based (e.g., the first page is 1).
                 
+                - **Language:** Your response (especially the "title" fields) **must** be in the primary language detected from the input (e.g., if the text is in German, the titles must be in German).
+
                 [
                   {
                     "title": "A descriptive title for this section",
@@ -863,9 +885,8 @@
                 Analyze the provided text content from a slide presentation and structure it for Anki card creation.
                 The text is formatted with "--- PAGE [number] ---" delimiters.
                 
-                Step 1: Identify Logical Sections
-                Group pages together that cover a single, distinct topic.
-                
+                ${step1Instruction}
+
                 Step 2: Filter Unwanted Slides
                 - Your filtering must be strict. REMOVE any slides that are purely administrative or structural.
                 - This includes, but is not limited to:
@@ -879,6 +900,8 @@
                 
                 Step 3: Output Format (JSON)
                 Return ONLY a valid JSON array following this structure. Do not include any other text or markdown fences.
+
+                - **Language:** Your response (especially the "title" fields) **must** be in the primary language detected from the input (e.g., if the text is in German, the titles must be in German).
                 
                 [
                   {
@@ -938,11 +961,85 @@
         }
 
         /**
-         * Creates the .apkg file based on the AI's grouping.
+         * Processes a single section (group of slides) and returns a Note object and stats.
+         * This function is designed to be run in parallel.
          */
-        async function createDeckFromConfig(pdfDoc, jsonConfig) { // apiKey removed
-            const slideBySlideMode = slideBySlideCheckbox.checked;
+        async function processSection(pdfDoc, section, sectionIndex, model, baseTimestamp) {
+            if (!section.pages || section.pages.length === 0) {
+                // Return null or throw an error to be caught by allSettled
+                throw new Error(`Section "${section.title}" has no pages.`);
+            }
 
+            // Get options from the DOM
+            const slideBySlideMode = document.getElementById('slide-by-slide-checkbox').checked;
+            const includeText = document.getElementById('include-text-checkbox').checked;
+            
+            let finalBackField = '';
+            let finalBackContentField = '';
+            
+            // This text is needed for both modes (or at least for the text field)
+            const groupedText = await extractTextForPages(pdfDoc, section.pages);
+
+            if (slideBySlideMode) {
+                // --- Slide-by-Slide Mode ---
+                // We can even parallelize the *slides within* the group
+                const slidePromises = section.pages.map(async (pageNum) => {
+                    const imageHtml = await renderImageForPage(pdfDoc, pageNum);
+                    const pageText = await extractTextForPage(pdfDoc, pageNum);
+                    let annotation = await callGeminiForSlideAnnotation(pageText);
+                    
+                    let html = imageHtml;
+                    if (annotation.trim() && !annotation.includes("")) {
+                        html += `<div class="slide-annotation">${annotation}</div>`;
+                    }
+                    return html;
+                });
+                
+                // Wait for all slides in this group to be processed
+                const slideHtmls = await Promise.all(slidePromises);
+                finalBackField = slideHtmls.join(''); // Join all slide HTMLs
+                finalBackContentField = '';
+
+            } else {
+                // --- Default (Group) Mode ---
+                // We can run image rendering and AI explanation in parallel
+                const imagePromise = renderImagesForPages(pdfDoc, section.pages);
+                const explanationPromise = callGeminiForExplanation(groupedText);
+
+                // Wait for both to finish
+                const [imageResult, explanation] = await Promise.all([
+                    imagePromise,
+                    explanationPromise
+                ]);
+
+                finalBackField = imageResult.combinedImageHtml;
+                finalBackContentField = explanation;
+            }
+
+            const orderField = `${baseTimestamp}${sectionIndex.toString().padStart(4, '0')}`;
+            const textSearchField = includeText ? groupedText : '';
+
+            const note = model.note([
+                orderField,            // Order
+                section.title,         // Front
+                finalBackField,        // Back
+                finalBackContentField, // BackContent
+                textSearchField        // Text
+            ]);
+            
+            const stats = [section.title, section.pages.length, section.pages[0]];
+            
+            // Return both the note and the stats for later
+            return { note, stats };
+        }
+
+
+        /**
+         * Creates the .apkg file based on the AI's grouping.
+         * USES PARALLEL PROCESSING WITH A CONCURRENCY LIMIT
+         */
+        async function createDeckFromConfig(pdfDoc, jsonConfig) {
+            // --- Model and Deck Setup (No Changes) ---
             const m = new Model({
                 name: "AI Slides - " + Date.now(),
                 id: "1543634829845", 
@@ -983,69 +1080,81 @@
             const deckName = pdfFile.name.replace(/\.[^/.]+$/, "");
             const d = new Deck(Date.now(), deckName);
             const baseTimestamp = new Date().getTime();
-            const cardStats = [];
+            // --- End of Setup ---
 
-            let sectionIndex = 0;
+            // --- NEW CONCURRENCY LIMIT LOGIC ---
             const totalSections = jsonConfig.length;
+            const maxParallelThreads = parseInt(maxParallelInput.value) || 10;
+            updateProgress(`Processing ${totalSections} sections (in parallel batches of ${maxParallelThreads})...`, 30);
+            
+            // 1. Create an array to hold all final results, in order
+            const results = new Array(totalSections).fill(null);
+            let completedCount = 0;
 
-            for (const section of jsonConfig) {
-                if (!section.pages || section.pages.length === 0) continue;
-
-                const baseProgress = 30 + (sectionIndex / totalSections) * 60;
-                updateProgress(`Processing section "${section.title}"...`, baseProgress);
-
-                let finalBackField = '';
-                let finalBackContentField = '';
-                
-                const groupedText = await extractTextForPages(pdfDoc, section.pages);
-
-                if (slideBySlideMode) {
-                    let combinedHtml = '';
-                    let slideInGroupIndex = 0;
-
-                    for (const pageNum of section.pages) {
-                        const slideProgress = baseProgress + ((slideInGroupIndex / section.pages.length) * (60 / totalSections));
-                        updateProgress(`Annotating slide ${pageNum} for "${section.title}"...`, slideProgress);
-
-                        const imageHtml = await renderImageForPage(pdfDoc, pageNum);
-                        const pageText = await extractTextForPage(pdfDoc, pageNum);
-                        
-                        let annotation = await callGeminiForSlideAnnotation(pageText); // apiKey removed
-                        
-                        combinedHtml += imageHtml;
-                        if (annotation.trim() && !annotation.includes("")) {
-                            combinedHtml += `<div class="slide-annotation">${annotation}</div>`;
-                        }
-                        
-                        slideInGroupIndex++;
-                    }
-                    finalBackField = combinedHtml;
-                    finalBackContentField = '';
-
-                } else {
-                    updateProgress(`Rendering images for "${section.title}"...`, baseProgress + 2);
-                    const { combinedImageHtml } = await renderImagesForPages(pdfDoc, section.pages);
-
-                    updateProgress(`Asking AI to explain "${section.title}"...`, baseProgress + 5);
-                    const explanation = await callGeminiForExplanation(groupedText); // apiKey removed
-                    
-                    finalBackField = combinedImageHtml;
-                    finalBackContentField = explanation;
+            // 2. Create a "runner" function that processes one task and updates results
+            const runTask = async (index) => {
+                const section = jsonConfig[index];
+                try {
+                    const result = await processSection(pdfDoc, section, index, m, baseTimestamp);
+                    results[index] = { status: 'fulfilled', value: result };
+                } catch (error) {
+                    results[index] = { status: 'rejected', reason: error };
                 }
+                
+                completedCount++;
+                const progressPercent = 30 + (completedCount / totalSections) * 65; // 30% to 95%
+                updateProgress(`Processing section ${completedCount} of ${totalSections}...`, progressPercent);
+            };
 
-                const orderField = `${baseTimestamp}${sectionIndex.toString().padStart(4, '0')}`;
-                const textSearchField = includeTextCheckbox.checked ? groupedText : '';
+            // 3. Create the pool
+            const pool = new Set();
+            
+            for (let i = 0; i < totalSections; i++) {
+                const promise = runTask(i);
+                pool.add(promise);
+                
+                // When the promise finishes, remove it from the pool
+                promise.then(() => pool.delete(promise));
 
-                d.addNote(m.note([
-                    orderField,            
-                    section.title,         
-                    finalBackField,        
-                    finalBackContentField, 
-                    textSearchField        
-                ]));
+                // If the pool is full, wait for *one* to finish before adding more
+                if (pool.size >= maxParallelThreads) {
+                    await Promise.race(pool);
+                }
+            }
+            
+            // 4. Wait for all remaining promises in the pool
+            await Promise.allSettled(Array.from(pool));
+            // --- END NEW CONCURRENCY LOGIC ---
 
-                cardStats.push([section.title, section.pages.length, section.pages[0]]);
-                sectionIndex++;
+
+            // --- Process results (this logic is unchanged) ---
+            const allNotes = [];
+            const cardStats = [];
+            let failedSections = 0;
+
+            results.forEach((result, index) => {
+                if (result.status === 'fulfilled') {
+                    const { note, stats } = result.value;
+                    allNotes.push(note);
+                    cardStats.push(stats);
+                } else {
+                    // Log the error and continue
+                    const sectionTitle = jsonConfig[index] ? jsonConfig[index].title : `Section ${index + 1}`;
+                    console.error(`Failed to process section "${sectionTitle}":`, result.reason);
+                    failedSections++;
+                }
+            });
+
+            // Sort the notes by their 'Order' field before adding.
+            allNotes.sort((a, b) => a.fields[0].localeCompare(b.fields[0]));
+
+            // Add all the successful notes to the deck
+            allNotes.forEach(note => d.addNote(note));
+            
+            if (failedSections > 0) {
+                // Show a partial error if some sections failed
+                const successfulCards = allNotes.length;
+                showError(`Warning: ${failedSections} card(s) failed to generate. ${successfulCards} card(s) were created successfully. Check console for details.`);
             }
 
             updateProgress("Creating .apkg file...", 95);
@@ -1061,11 +1170,13 @@
             downloadLink.textContent = `Download ${deckName}.apkg`;
             downloadArea.appendChild(downloadLink);
 
-            updateStats(deckName, jsonConfig.length, cardStats, pdfDoc.numPages);
+            updateStats(deckName, allNotes.length, cardStats, pdfDoc.numPages);
         }
+
 
         /**
          * Renders a single page to an <img> tag string.
+         * --- MODIFIED with willReadFrequently ---
          */
         async function renderImageForPage(pdfDoc, pageNum) {
             const compressImages = compressImagesCheckbox.checked;
@@ -1077,11 +1188,21 @@
             const viewport = page.getViewport({ scale });
 
             const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
+            
+            // --- FIX 1 ---
+            // Add the willReadFrequently hint when getting the context
+            const context = canvas.getContext('2d', { willReadFrequently: true });
+            
             canvas.height = viewport.height;
             canvas.width = viewport.width;
 
-            await page.render({ canvasContext: context, viewport }).promise;
+            // --- FIX 2 ---
+            // Also pass the hint to the pdf.js render method
+            await page.render({ 
+                canvasContext: context, 
+                viewport,
+                willReadFrequently: true 
+            }).promise;
 
             let imageData = canvas.toDataURL('image/jpeg', 0.9);
 
@@ -1147,13 +1268,14 @@
         * Second Gemini call: To explain the content of a *group* of slides.
         */
         async function callGeminiForExplanation(groupedText) { // apiKey removed
-            // === PROMPT MODIFIED (Instruction already present) ===
+            // === PROMPT MODIFIED ===
             const prompt = `
                 Task:
                 You will be given the text from a set of presentation slides on a specific topic.
                 Your task is to provide a clear, comprehensive, and well-structured explanation of the content, as if you were teaching it to a student.
                 
                 Instructions:
+                - **Language:** Respond in the **same language** as the provided slide text.
                 - Do not just repeat the slide's bullet points.
                 - Elaborate on the concepts, connect the ideas, and provide context.
                 - Structure your explanation using simple HTML tags like <p>, <ul>, <li>, and <i>.
@@ -1182,7 +1304,7 @@
         * Third Gemini call: To annotate a *single* slide, only if needed.
         */
         async function callGeminiForSlideAnnotation(singlePageText) { // apiKey removed
-            // === PROMPT MODIFIED (Instruction already present) ===
+            // === PROMPT MODIFIED ===
             const prompt = `
                 Task:
                 You will be given the text from a single presentation slide.
@@ -1199,6 +1321,7 @@
                       - Use MathJax format (\\(...\\) and \\[...\\]) for any math. Keep it brief.
                     - If no explanation is needed: Respond ONLY with the exact string "".
                 3.  **DO NOT** add any other preamble, markdown, or text.
+                4.  **Language:** Respond in the **same language** as the provided slide text.
 
                 Here is the slide text:
                 ${singlePageText}
