@@ -318,10 +318,10 @@
                 <div style="grid-column: 1 / -1;">
                     <label><b>Grouping Input Method:</b></label>
                     <div style="background-color: #f9f9f9; padding: 10px; border-radius: 4px; border: 1px solid #eee;">
-                        <input type="radio" id="input-text" name="grouping-input" value="text" checked>
+                        <input type="radio" id="input-text" name="grouping-input" value="text">
                         <label for="input-text">Send Extracted Text (Default, Fast)</label>
                         <br>
-                        <input type="radio" id="input-file" name="grouping-input" value="file">
+                        <input type="radio" id="input-file" name="grouping-input" value="file" checked>
                         <label for="input-file">Upload Full PDF (Slower, may be more accurate)</label>
                     </div>
                 </div>
@@ -522,16 +522,16 @@
                     compressImagesCheckbox.checked = options.compressImages !== false; // default true
                     includeTextCheckbox.checked = options.includeText !== false; // default true
                     slideBySlideCheckbox.checked = options.slideBySlide === true; // default false
-                    detailedGroupingCheckbox.checked = options.detailedGrouping === true; // default false
+                    detailedGroupingCheckbox.checked = options.detailedGrouping !== false; // default true
                     if (options.maxResolution) maxResolutionInput.value = options.maxResolution;
                     if (options.maxSize) maxSizeInput.value = options.maxSize;
                     if (options.groupingModel) groupingModelSelect.value = options.groupingModel;
                     if (options.maxParallel) maxParallelInput.value = options.maxParallel; // <-- ADDED
                     
-                    if (options.groupingInput === 'file') {
-                        groupingInputFile.checked = true;
-                    } else {
+                    if (options.groupingInput === 'text') {
                         groupingInputText.checked = true;
+                    } else {
+                        groupingInputFile.checked = true;
                     }
                 } catch (e) {
                     console.error("Failed to load saved options:", e);
@@ -836,7 +836,8 @@
                 - Your goal is to create **small, focused groups**.
                 - A group should ideally cover only **one or two key concepts** and be **1-4 slides long**.
                 - **Do NOT create large groups** (e.g., 10+ slides).
-                - It is better to have many small, specific groups than a few large, general ones.`
+                - It is better to have many small, specific groups than a few large, general ones.
+                - For titles, if creating subtopics of a larger topic, format as "Main Topic: Specific Subtopic".`
                 : `Step 1: Identify Logical Sections
                 Group pages together that cover a single, distinct topic.`;
             // --- END MODIFIED BLOCK ---
