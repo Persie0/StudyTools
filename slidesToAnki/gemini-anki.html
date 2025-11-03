@@ -67,6 +67,10 @@
                     <label for="compress-images-checkbox">Compress images</label>
                 </div>
                 <div>
+                    <input type="checkbox" id="auto-crop-checkbox">
+                    <label for="auto-crop-checkbox">Auto-crop white borders</label>
+                </div>
+                <div>
                     <input type="checkbox" id="include-text-checkbox" checked>
                     <label for="include-text-checkbox">Include original slide text (for search)</label>
                 </div>
@@ -147,7 +151,7 @@
         const progressArea = document.getElementById('progress-area');
         const statsArea = document.getElementById('stats-area');
         const downloadArea = document.getElementById('download-area');
-        const apiKeysTextarea = document.getElementById('api-keys-textarea'); // Changed
+        const apiKeysTextarea = document.getElementById('api-keys-textarea');
         const saveKeyButton = document.getElementById('save-key-button');
         const clearKeyButton = document.getElementById('clear-key-button');
         const jsonError = document.getElementById('json-error');
@@ -155,6 +159,7 @@
         // --- Options ---
         const includeTextCheckbox = document.getElementById('include-text-checkbox');
         const compressImagesCheckbox = document.getElementById('compress-images-checkbox');
+        const autoCropCheckbox = document.getElementById('auto-crop-checkbox');
         const maxResolutionInput = document.getElementById('max-resolution-input');
         const maxSizeInput = document.getElementById('max-size-input');
         const slideBySlideCheckbox = document.getElementById('slide-by-slide-checkbox');
@@ -162,11 +167,11 @@
         const groupingModelSelect = document.getElementById('grouping-model-select');
         const groupingInputText = document.getElementById('input-text');
         const groupingInputFile = document.getElementById('input-file');
-        const maxParallelInput = document.getElementById('max-parallel-input'); // <-- ADDED
+        const maxParallelInput = document.getElementById('max-parallel-input');
 
         // --- State ---
         let pdfFile = null;
-        let keyPool = []; // New: To manage multiple API keys
+        let keyPool = [];
 
         // --- Event Listeners ---
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -182,23 +187,23 @@
         dropArea.addEventListener('drop', handleDrop, false);
         fileInput.addEventListener('change', handleFiles, false);
         generateButton.addEventListener('click', generateAnkiDecks, false);
-        apiKeysTextarea.addEventListener('input', checkReady); // Changed
-        saveKeyButton.addEventListener('click', saveApiKeys); // Changed
-        clearKeyButton.addEventListener('click', clearApiKeys); // Changed
+        apiKeysTextarea.addEventListener('input', checkReady);
+        saveKeyButton.addEventListener('click', saveApiKeys);
+        clearKeyButton.addEventListener('click', clearApiKeys);
 
         // Add listeners for all options
         [
             compressImagesCheckbox, includeTextCheckbox, slideBySlideCheckbox, 
             maxResolutionInput, maxSizeInput, groupingModelSelect, 
             groupingInputText, groupingInputFile, detailedGroupingCheckbox,
-            maxParallelInput // <-- ADDED
+            maxParallelInput, autoCropCheckbox
         ].forEach(el => { 
             el.addEventListener('change', saveOptions);
         });
 
         // --- Initial Load ---
-        loadApiKeys(); // Changed
-        loadOptions(); // New
+        loadApiKeys();
+        loadOptions();
 
         // --- Drag and Drop Handlers ---
         function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
@@ -241,39 +246,40 @@
         }
 
         function checkReady() {
-            generateButton.disabled = !(pdfFile && apiKeysTextarea.value.trim() !== ''); // Changed
+            generateButton.disabled = !(pdfFile && apiKeysTextarea.value.trim() !== '');
         }
 
         // --- API Key Storage Functions ---
-        function saveApiKeys() { // Changed
-            const apiKeys = apiKeysTextarea.value; // Don't trim, preserve newlines
+        function saveApiKeys() {
+            const apiKeys = apiKeysTextarea.value;
             if (apiKeys) {
-                localStorage.setItem('geminiAnkiApiKeys', apiKeys); // Changed key
+                localStorage.setItem('geminiAnkiApiKeys', apiKeys);
                 alert('API Keys saved to browser storage.');
             } else {
                 alert('Please enter at least one API key to save.');
             }
         }
 
-        function clearApiKeys() { // Changed
-            localStorage.removeItem('geminiAnkiApiKeys'); // Changed key
+        function clearApiKeys() {
+            localStorage.removeItem('geminiAnkiApiKeys');
             apiKeysTextarea.value = '';
             checkReady();
             alert('API Keys cleared from browser storage.');
         }
 
-        function loadApiKeys() { // Changed
-            const savedKeys = localStorage.getItem('geminiAnkiApiKeys'); // Changed key
+        function loadApiKeys() {
+            const savedKeys = localStorage.getItem('geminiAnkiApiKeys');
             if (savedKeys) {
                 apiKeysTextarea.value = savedKeys;
                 checkReady();
             }
         }
 
-        // --- New Options Storage Functions ---
+        // --- Options Storage Functions ---
         function saveOptions() {
             localStorage.setItem('geminiAnkiOptions', JSON.stringify({
                 compressImages: compressImagesCheckbox.checked,
+                autoCrop: autoCropCheckbox.checked,
                 includeText: includeTextCheckbox.checked,
                 maxResolution: maxResolutionInput.value,
                 maxSize: maxSizeInput.value,
@@ -281,7 +287,7 @@
                 detailedGrouping: detailedGroupingCheckbox.checked,
                 groupingModel: groupingModelSelect.value,
                 groupingInput: groupingInputText.checked ? 'text' : 'file',
-                maxParallel: maxParallelInput.value // <-- ADDED
+                maxParallel: maxParallelInput.value
             }));
         }
 
@@ -292,13 +298,14 @@
                     const options = JSON.parse(savedOptions);
                     // Set values, providing defaults for undefined properties
                     compressImagesCheckbox.checked = options.compressImages !== false; // default true
+                    autoCropCheckbox.checked = options.autoCrop === true; // default false
                     includeTextCheckbox.checked = options.includeText !== false; // default true
                     slideBySlideCheckbox.checked = options.slideBySlide === true; // default false
                     detailedGroupingCheckbox.checked = options.detailedGrouping !== false; // default true
                     if (options.maxResolution) maxResolutionInput.value = options.maxResolution;
                     if (options.maxSize) maxSizeInput.value = options.maxSize;
                     if (options.groupingModel) groupingModelSelect.value = options.groupingModel;
-                    if (options.maxParallel) maxParallelInput.value = options.maxParallel; // <-- ADDED
+                    if (options.maxParallel) maxParallelInput.value = options.maxParallel;
                     
                     if (options.groupingInput === 'text') {
                         groupingInputText.checked = true;
@@ -343,12 +350,12 @@
             downloadArea.innerHTML = '';
             updateProgress("Starting...", 0);
 
-            if (!pdfFile || !apiKeysTextarea.value.trim()) { // Changed
+            if (!pdfFile || !apiKeysTextarea.value.trim()) {
                 showError("Please provide both a PDF file and at least one Gemini API Key.");
                 return;
             }
 
-            // New: Initialize the key pool
+            // Initialize the key pool
             const apiKeysString = apiKeysTextarea.value.trim();
             keyPool = apiKeysString.split('\n')
                 .filter(k => k.trim() !== '')
@@ -390,7 +397,7 @@
                 }
 
                 updateProgress("AI grouping received. Starting deck generation...", 30);
-                await createDeckFromConfig(pdfDoc, groupingJSON); // pdfDoc passed here
+                await createDeckFromConfig(pdfDoc, groupingJSON);
 
                 updateProgress("Anki deck generated!", 100);
 
@@ -421,19 +428,18 @@
             return new Promise(resolve => setTimeout(resolve, ms));
         }
 
-        // --- New Countdown Timer ---
+        // --- Countdown Timer ---
         async function showWaitingCountdown(totalWaitMs, baseMessage, percentage) {
             updateProgress(`${baseMessage} Waiting for ${Math.ceil(totalWaitMs / 1000)}s...`, percentage);
             await sleep(totalWaitMs);
         }
 
-        // --- New Base64 Helper ---
+        // --- Base64 Helper ---
         function fileToBase64(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.readAsDataURL(file);
                 reader.onload = () => {
-                    // Get data part (after 'base64,')
                     const base64Data = reader.result.split(',')[1];
                     resolve(base64Data);
                 };
@@ -442,11 +448,6 @@
         }
 
         // --- Universal API caller with retry logic ---
-        /**
-         * Makes a call to the Gemini API with automatic retry and key rotation.
-         * Relies on the global `keyPool` variable.
-         * Can optionally send Base64-encoded file data.
-         */
         async function callGeminiWithRetry(prompt, generationConfig = null, model = 'gemini-2.5-flash-lite', fileBytesBase64 = null) {
             if (!keyPool || keyPool.length === 0) {
                 throw new Error("API Key pool is empty.");
@@ -457,40 +458,33 @@
             while (true) {
                 const now = Date.now();
                 
-                // 1. Find an available key
                 let keyEntry = null;
                 for (const entry of keyPool) {
                     if (now >= entry.availableAt) {
                         keyEntry = entry;
-                        break; // Found a usable key
+                        break;
                     }
                 }
                 
-                // Store current progress *before* any potential waiting
                 const progressBarFill = document.querySelector('.progress-bar-fill');
                 const currentPercentage = progressBarFill ? progressBarFill.style.width : '0%';
                 const currentProgressMessage = progressArea.querySelector('p') ? progressArea.querySelector('p').textContent : 'Processing...';
 
-                // 2. If no key is available, wait for the soonest one (WITH COUNTDOWN)
                 if (!keyEntry) {
                     const soonestAvailableTime = Math.min(...keyPool.map(k => k.availableAt));
-                    const waitMs = (soonestAvailableTime - now) + 1000; // 1s buffer
+                    const waitMs = (soonestAvailableTime - now) + 1000;
                     
                     console.warn(`All keys busy/rate-limited. Waiting for ${waitMs / 1000}s...`);
                     
-                    // Start the countdown
                     await showWaitingCountdown(waitMs, `All keys busy. Pausing... (Retry #${retryCount})`, currentPercentage);
                     
-                    // After countdown, restore original message and continue loop
                     updateProgress(currentProgressMessage, currentPercentage);
-                    continue; // Restart the loop to find a key
+                    continue;
                 }
 
-                // 3. We have a key. Try to use it.
                 const apiKey = keyEntry.key;
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-                // Build the request parts
                 const parts = [{ text: prompt }];
                 if (fileBytesBase64) {
                     parts.push({
@@ -519,7 +513,7 @@
                     if (response.ok) {
                         const data = await response.json();
                         if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts[0]) {
-                            return data.candidates[0].content.parts[0].text; // SUCCESS!
+                            return data.candidates[0].content.parts[0].text;
                         } else {
                             throw new Error("Invalid successful response structure from Gemini.");
                         }
@@ -528,66 +522,61 @@
                     const errorBody = await response.json();
                     const errorMessage = errorBody.error ? errorBody.error.message : "Unknown API error";
 
-                    // 4. Handle 503 / Overloaded
                     if (response.status === 503 || errorMessage.includes("model is overloaded")) {
-                        const waitMs = 15000; // Wait 15s for this key
+                        const waitMs = 15000;
                         keyEntry.availableAt = Date.now() + waitMs;
                         
                         console.warn(`Model is overloaded for key ...${apiKey.slice(-4)}. Retrying after ${waitMs / 1000}s.`);
                         updateProgress(`Model overloaded (Key: ...${apiKey.slice(-4)}). Trying next key... (Retry #${retryCount})`, currentPercentage);
-                        await sleep(500); // Brief pause to show message
-                        updateProgress(currentProgressMessage, currentPercentage); // Restore message
+                        await sleep(500);
+                        updateProgress(currentProgressMessage, currentPercentage);
                         
                         retryCount++;
-                        continue; // Loop again to find a *different* key
+                        continue;
                     }
 
-                    // 5. Handle Rate Limit
                     if (errorMessage.includes("Quota exceeded") && errorMessage.includes("Please retry in")) {
                         const match = errorMessage.match(/Please retry in ([\d\.]+)s/);
                         
                         if (match && match[1]) {
                             const waitTimeS = parseFloat(match[1]);
                             
-                            if (waitTimeS > 300) { // 5-minute hard limit
+                            if (waitTimeS > 300) {
                                 throw new Error(`Rate limit retry time (${waitTimeS.toFixed(1)}s) for key ending in ...${apiKey.slice(-4)} exceeds 5 minutes. Aborting. Full error: ${errorMessage}`);
                             }
 
-                            const waitMs = (waitTimeS * 1000) + 1000; // 1s buffer
-                            // Update this specific key's availability
+                            const waitMs = (waitTimeS * 1000) + 1000;
                             keyEntry.availableAt = Date.now() + waitMs; 
                             
                             console.warn(`Gemini rate limit hit for key ...${apiKey.slice(-4)}. Setting cool-down for ${waitTimeS.toFixed(1)}s. Trying next key...`);
                             
                             updateProgress(`Key ...${apiKey.slice(-4)} rate-limited. Trying next key... (Retry #${retryCount})`, currentPercentage);
-                            await sleep(500); // Brief pause to show message
-                            updateProgress(currentProgressMessage, currentPercentage); // Restore message
+                            await sleep(500);
+                            updateProgress(currentProgressMessage, currentPercentage);
                             
                             retryCount++;
-                            continue; // Loop again to find a *different* key
+                            continue;
                         }
                     }
                     
-                    // 6. Handle Other API Errors (like invalid key)
                     if (response.status === 400 || response.status === 403) {
-                         keyEntry.availableAt = Date.now() + 86400000; // Disable for 24h
+                         keyEntry.availableAt = Date.now() + 86400000;
                          console.error(`API Key ...${apiKey.slice(-4)} is invalid or unauthorized. Disabling it for 24h. Error: ${errorMessage}`);
                          updateProgress(`Key ...${apiKey.slice(-4)} is invalid. Trying next... (Retry #${retryCount})`, currentPercentage);
                          await sleep(500);
                          updateProgress(currentProgressMessage, currentPercentage);
                          retryCount++;
-                         continue; // Try next key
+                         continue;
                     }
 
                     throw new Error(`Gemini API error (Key: ...${apiKey.slice(-4)}): ${errorMessage}`);
 
                 } catch (error) {
                     console.error(`Network or fetch error (Key: ...${apiKey.slice(-4)}):`, error);
-                    // Penalize key for network errors too?
-                    keyEntry.availableAt = Date.now() + 30000; // Wait 30s before retrying this key
+                    keyEntry.availableAt = Date.now() + 30000;
                     console.warn(`Pausing key ...${apiKey.slice(-4)} for 30s due to network error.`);
                     retryCount++;
-                    continue; // Try next key
+                    continue;
                 }
             }
         }
@@ -600,9 +589,8 @@
             let prompt;
             let filePayload = null;
             const config = { responseMimeType: "application/json" };
-            const useDetailedGrouping = detailedGroupingCheckbox.checked; // <-- ADDED
+            const useDetailedGrouping = detailedGroupingCheckbox.checked;
 
-            // --- THIS BLOCK IS NEW/MODIFIED ---
             const step1Instruction = useDetailedGrouping
                 ? `Step 1: Identify Logical Sections
                 - Your goal is to create **small, focused groups**.
@@ -612,7 +600,6 @@
                 - For titles, if creating subtopics of a larger topic, format as "Main Topic: Specific Subtopic".`
                 : `Step 1: Identify Logical Sections
                 Group pages together that cover a single, distinct topic.`;
-            // --- END MODIFIED BLOCK ---
 
             if (inputType === 'file') {
                 prompt = `
@@ -750,12 +737,10 @@
             let finalBackField = '';
             let finalBackContentField = '';
             
-            // This text is needed for both modes (or at least for the text field)
             const groupedText = await extractTextForPages(pdfDoc, section.pages);
 
             if (slideBySlideMode) {
                 // --- Slide-by-Slide Mode ---
-                // We can even parallelize the *slides within* the group
                 const slidePromises = section.pages.map(async (pageNum) => {
                     const imageHtml = await renderImageForPage(pdfDoc, pageNum);
                     const pageText = await extractTextForPage(pdfDoc, pageNum);
@@ -768,18 +753,15 @@
                     return html;
                 });
                 
-                // Wait for all slides in this group to be processed
                 const slideHtmls = await Promise.all(slidePromises);
-                finalBackField = slideHtmls.join(''); // Join all slide HTMLs
+                finalBackField = slideHtmls.join('');
                 finalBackContentField = '';
 
             } else {
                 // --- Default (Group) Mode ---
-                // We can run image rendering and AI explanation in parallel
                 const imagePromise = renderImagesForPages(pdfDoc, section.pages);
                 const explanationPromise = callGeminiForExplanation(groupedText);
 
-                // Wait for both to finish
                 const [imageResult, explanation] = await Promise.all([
                     imagePromise,
                     explanationPromise
@@ -793,26 +775,24 @@
             const textSearchField = includeText ? groupedText : '';
 
             const note = model.note([
-                orderField,            // Order
-                section.title,         // Front
-                finalBackField,        // Back
-                finalBackContentField, // BackContent
-                textSearchField        // Text
+                orderField,
+                section.title,
+                finalBackField,
+                finalBackContentField,
+                textSearchField
             ]);
             
             const stats = [section.title, section.pages.length, section.pages[0]];
             
-            // Return both the note and the stats for later
             return { note, stats };
         }
 
 
         /**
          * Creates the .apkg file based on the AI's grouping.
-         * USES PARALLEL PROCESSING WITH A CONCURRENCY LIMIT
          */
         async function createDeckFromConfig(pdfDoc, jsonConfig) {
-            // --- Model and Deck Setup (No Changes) ---
+            // --- Model and Deck Setup ---
             const m = new Model({
                 name: "AI Slides - " + Date.now(),
                 id: "1543634829845", 
@@ -853,18 +833,15 @@
             const deckName = pdfFile.name.replace(/\.[^/.]+$/, "");
             const d = new Deck(Date.now(), deckName);
             const baseTimestamp = new Date().getTime();
-            // --- End of Setup ---
 
-            // --- NEW CONCURRENCY LIMIT LOGIC ---
+            // --- Concurrency Limit Logic ---
             const totalSections = jsonConfig.length;
             const maxParallelThreads = parseInt(maxParallelInput.value) || 10;
             updateProgress(`Processing ${totalSections} sections (in parallel batches of ${maxParallelThreads})...`, 30);
             
-            // 1. Create an array to hold all final results, in order
             const results = new Array(totalSections).fill(null);
             let completedCount = 0;
 
-            // 2. Create a "runner" function that processes one task and updates results
             const runTask = async (index) => {
                 const section = jsonConfig[index];
                 try {
@@ -875,32 +852,27 @@
                 }
                 
                 completedCount++;
-                const progressPercent = 30 + (completedCount / totalSections) * 65; // 30% to 95%
+                const progressPercent = 30 + (completedCount / totalSections) * 65;
                 updateProgress(`Processing section ${completedCount} of ${totalSections}...`, progressPercent);
             };
 
-            // 3. Create the pool
             const pool = new Set();
             
             for (let i = 0; i < totalSections; i++) {
                 const promise = runTask(i);
                 pool.add(promise);
                 
-                // When the promise finishes, remove it from the pool
                 promise.then(() => pool.delete(promise));
 
-                // If the pool is full, wait for *one* to finish before adding more
                 if (pool.size >= maxParallelThreads) {
                     await Promise.race(pool);
                 }
             }
             
-            // 4. Wait for all remaining promises in the pool
             await Promise.allSettled(Array.from(pool));
-            // --- END NEW CONCURRENCY LOGIC ---
+            // --- End Concurrency Logic ---
 
-
-            // --- Process results (this logic is unchanged) ---
+            // --- Process results ---
             const allNotes = [];
             const cardStats = [];
             let failedSections = 0;
@@ -911,21 +883,16 @@
                     allNotes.push(note);
                     cardStats.push(stats);
                 } else {
-                    // Log the error and continue
                     const sectionTitle = jsonConfig[index] ? jsonConfig[index].title : `Section ${index + 1}`;
                     console.error(`Failed to process section "${sectionTitle}":`, result.reason);
                     failedSections++;
                 }
             });
 
-            // Sort the notes by their 'Order' field before adding.
             allNotes.sort((a, b) => a.fields[0].localeCompare(b.fields[0]));
-
-            // Add all the successful notes to the deck
             allNotes.forEach(note => d.addNote(note));
             
             if (failedSections > 0) {
-                // Show a partial error if some sections failed
                 const successfulCards = allNotes.length;
                 showError(`Warning: ${failedSections} card(s) failed to generate. ${successfulCards} card(s) were created successfully. Check console for details.`);
             }
@@ -949,36 +916,136 @@
 
         /**
          * Renders a single page to an <img> tag string.
-         * --- MODIFIED with willReadFrequently ---
+         * --- MODIFIED with auto-cropping padding ---
          */
         async function renderImageForPage(pdfDoc, pageNum) {
+            // Get options
             const compressImages = compressImagesCheckbox.checked;
+            const autoCrop = autoCropCheckbox.checked;
             const maxResolution = parseInt(maxResolutionInput.value);
             const maxSizeKB = parseInt(maxSizeInput.value);
 
             const page = await pdfDoc.getPage(pageNum);
-            const scale = 2; 
+            const scale = 2; // Render at 2x for clarity
             const viewport = page.getViewport({ scale });
 
             const canvas = document.createElement('canvas');
-            
-            // --- FIX 1 ---
-            // Add the willReadFrequently hint when getting the context
             const context = canvas.getContext('2d', { willReadFrequently: true });
-            
             canvas.height = viewport.height;
             canvas.width = viewport.width;
 
-            // --- FIX 2 ---
-            // Also pass the hint to the pdf.js render method
             await page.render({ 
                 canvasContext: context, 
                 viewport,
                 willReadFrequently: true 
             }).promise;
 
-            let imageData = canvas.toDataURL('image/jpeg', 0.9);
+            // --- AUTO-CROP LOGIC ---
+            let finalCanvas = canvas; // Default to the original canvas
 
+            if (autoCrop) {
+                try {
+                    const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+                    const trimThreshold = 250; // Pixels lighter than this (per channel) are "white"
+                    const padding = 15; // <-- *** PADDING ADDED ***
+
+                    // Helper to check if a pixel has content
+                    const isContent = (index) => {
+                        const r = data[index];
+                        const g = data[index + 1];
+                        const b = data[index + 2];
+                        const a = data[index + 3];
+                        return a > 0 && (r < trimThreshold || g < trimThreshold || b < trimThreshold);
+                    };
+
+                    let cropTop = 0, cropBottom = height, cropLeft = 0, cropRight = width;
+                    let foundTop = false, foundBottom = false, foundLeft = false, foundRight = false;
+
+                    // Find Top
+                    for (let y = 0; y < height; y++) {
+                        for (let x = 0; x < width; x++) {
+                            if (isContent((y * width + x) * 4)) {
+                                cropTop = y;
+                                foundTop = true;
+                                break;
+                            }
+                        }
+                        if (foundTop) break;
+                    }
+
+                    // Find Bottom
+                    if (foundTop) { // Only search if the slide isn't blank
+                        for (let y = height - 1; y >= cropTop; y--) {
+                            for (let x = 0; x < width; x++) {
+                                if (isContent((y * width + x) * 4)) {
+                                    cropBottom = y + 1; // +1 to make it exclusive
+                                    foundBottom = true;
+                                    break;
+                                }
+                            }
+                            if (foundBottom) break;
+                        }
+
+                        // Find Left
+                        for (let x = 0; x < width; x++) {
+                            for (let y = cropTop; y < cropBottom; y++) {
+                                if (isContent((y * width + x) * 4)) {
+                                    cropLeft = x;
+                                    foundLeft = true;
+                                    break;
+                                }
+                            }
+                            if (foundLeft) break;
+                        }
+
+                        // Find Right
+                        for (let x = width - 1; x >= cropLeft; x--) {
+                            for (let y = cropTop; y < cropBottom; y++) {
+                                if (isContent((y * width + x) * 4)) {
+                                    cropRight = x + 1; // +1 to make it exclusive
+                                    foundRight = true;
+                                    break;
+                                }
+                            }
+                            if (foundRight) break;
+                        }
+
+                        // *** APPLY PADDING to the crop box ***
+                        cropTop = Math.max(0, cropTop - padding);
+                        cropBottom = Math.min(height, cropBottom + padding);
+                        cropLeft = Math.max(0, cropLeft - padding);
+                        cropRight = Math.min(width, cropRight + padding);
+
+                        // Apply the crop if valid
+                        const newWidth = cropRight - cropLeft;
+                        const newHeight = cropBottom - cropTop;
+
+                        if (newWidth > 0 && newHeight > 0) {
+                            const cropCanvas = document.createElement('canvas');
+                            const cropCtx = cropCanvas.getContext('2d');
+                            cropCanvas.width = newWidth;
+                            cropCanvas.height = newHeight;
+                            
+                            cropCtx.drawImage(
+                                canvas,
+                                cropLeft, cropTop, newWidth, newHeight, // Source (x, y, w, h)
+                                0, 0, newWidth, newHeight             // Destination (x, y, w, h)
+                            );
+                            finalCanvas = cropCanvas; // Use the new cropped canvas
+                        }
+                    }
+                } catch (e) {
+                    console.error(`Auto-cropping failed for page ${pageNum}: ${e.message}. Using original image.`);
+                    // Fallback: finalCanvas is already set to the original canvas
+                }
+            }
+            // --- END AUTO-CROP LOGIC ---
+
+            // Use the finalCanvas (either original or cropped) to generate the image
+            let imageData = finalCanvas.toDataURL('image/jpeg', 0.9);
+
+            // *** COMPRESSION LOGIC ***
+            // This runs *after* cropping, using the imageData from finalCanvas
             if (compressImages) {
                 const response = await fetch(imageData);
                 const blob = await response.blob();
@@ -1040,8 +1107,7 @@
         /**
         * Second Gemini call: To explain the content of a *group* of slides.
         */
-        async function callGeminiForExplanation(groupedText) { // apiKey removed
-            // === PROMPT MODIFIED ===
+        async function callGeminiForExplanation(groupedText) {
             const prompt = `
                 Task:
                 You will be given the text from a set of presentation slides on a specific topic.
@@ -1062,10 +1128,8 @@
                 Here is the slide text:
                 ${groupedText}
             `;
-            // === END MODIFICATION ===
 
             try {
-                // This call does not need model selection or file upload, so we use the default params
                 return await callGeminiWithRetry(prompt); 
             } catch (error) {
                 console.error("Error in explanation call:", error);
@@ -1076,8 +1140,7 @@
         /**
         * Third Gemini call: To annotate a *single* slide, only if needed.
         */
-        async function callGeminiForSlideAnnotation(singlePageText) { // apiKey removed
-            // === PROMPT MODIFIED ===
+        async function callGeminiForSlideAnnotation(singlePageText) {
             const prompt = `
                 Task:
                 You will be given the text from a single presentation slide.
@@ -1099,10 +1162,8 @@
                 Here is the slide text:
                 ${singlePageText}
             `;
-            // === END MODIFICATION ===
 
             try {
-                 // This call does not need model selection or file upload, so we use the default params
                 return await callGeminiWithRetry(prompt);
             } catch (error) {
                 console.error("Error in annotation call:", error);
@@ -1111,7 +1172,7 @@
         }
 
 
-        // --- Utility Functions from Original File ---
+        // --- Utility Functions ---
         function updateStats(deckName, totalCards, cardStats, totalPages) {
             let statsHTML = `<h3>Stats for ${deckName}</h3>`;
             statsHTML += `<p>Total PDF pages: ${totalPages}</p>`;
