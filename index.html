@@ -116,6 +116,7 @@
         <div class="quick-links">
             <a href="./pdfSplitter/pdf-splitter.html">Chapter Splitter</a>
             <a href="./slidesToAnki/gemini-anki.html">AI Anki Converter</a>
+            <a href="./slidesToAnki/gemini-anki-topics-fileupload.html">Topic Converter</a>
             <a href="./slidesToAnki/slidesanki.html">Slides to Anki</a>
             <a href="./pdfPageStripper/stripper.html">Page Stripper</a>
             <a href="./jsonToAnki/jsonToAnki.html">JSON to Anki</a>
@@ -217,6 +218,30 @@
                     <li>Click "Generate Anki Deck" and wait for processing</li>
                     <li>Download the generated .apkg file and import it into Anki</li>
                 </ol>
+            </div>
+        </div>
+
+        <div class="tool-card">
+            <h2>AI-Powered PDF to Anki Topic Converter (File Upload)</h2>
+            <p>Convert PDFs to Anki flashcards by extracting topics and generating explanations using full PDF file uploads.</p>
+            <ul class="features">
+                <li>AI identifies all main topics and subtopics from your PDF</li>
+                <li>Uploads full PDF for each topic explanation (slower but more accurate)</li>
+                <li>Creates topic-based Anki cards with AI explanations</li>
+                <li>Processes content directly in your browser</li>
+            </ul>
+            <a href="./slidesToAnki/gemini-anki-topics-fileupload.html" class="btn">Try Topic Converter</a>
+            <button class="usage-toggle" onclick="toggleUsage('topic-converter-usage')">Show Usage</button>
+            <div class="usage-details" id="topic-converter-usage">
+                <h3>How to use:</h3>
+                <ol>
+                    <li>Upload a single PDF file</li>
+                    <li>Enter your Gemini API key(s) (stored locally in your browser)</li>
+                    <li>The AI analyzes the full PDF to identify topics</li>
+                    <li>For each topic, the full PDF is uploaded again for explanation generation</li>
+                    <li>Download the generated .apkg file and import it into Anki</li>
+                </ol>
+                <p><strong>Warning:</strong> This method uploads the entire PDF file for every topic, making it slower and more API-intensive.</p>
             </div>
         </div>
 

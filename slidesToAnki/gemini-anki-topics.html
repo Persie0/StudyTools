@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Powered PDF to Anki Topic Converter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/krmanik/genanki-js/dist/genanki.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    
+    <link rel="stylesheet" href="gemini-anki.css">
+    
+    <style>
+        /* Additional style to hide the removed slides container, as it's not used here */
+        #removed-slides-container {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app-container">
+        <h1>AI-Powered PDF to Anki Topic Converter</h1>
+
+        <div class="info-box">
+            <p><b>How it works:</b>
+            <ol>
+                <li>Enter one or more Google AI (Gemini) API Keys (one per line). (You can save these to your browser).</li>
+                <li>Upload a single PDF file.</li>
+                <li>The app extracts all text from your PDF.</li>
+                <li>It sends the full text to the "Topic AI Model" to get a JSON list of all topics and subtopics.</li>
+                <li>For **each topic**, it sends the topic and the full text to the "Explanation AI Model" to get a simple, clear explanation.</li>
+                <li>It then builds an Anki deck with "Topic" on the front and the AI-generated "Explanation" on the back.</li>
+            </ol>
+            </p>
+            <p>⚠️ <b>Warning:</b> This tool makes many API calls (1 + N, where N is the number of topics found). A large PDF can result in 50+ calls.</p>
+            <p>✅ <b>Note:</b> This tool automatically retries on rate limits or 503 (model overloaded) errors. If all your keys are busy, it will show a **countdown timer** and wait.</p>
+        </div>
+
+        <div class="config-section">
+            <label for="api-keys-textarea">Gemini API Keys (one per line):</label>
+            <textarea id="api-keys-textarea" rows="4" placeholder="Enter one or more Google AI API Keys here, each on a new line..."></textarea>
+            <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px;">
+                 <button id="save-key-button" style="padding: 10px 15px;">Save Keys</button>
+                 <button id="clear-key-button" style="padding: 10px 15px; background-color: #dc3545;">Clear Keys</button>
+            </div>
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" style="display: block; margin-top: 5px;">Get your API key here</a>
+        </div>
+
+        <div class="upload-section">
+            <div id="drop-area">
+                <form class="my-form">
+                    <p>Upload a single PDF file by dragging and dropping or clicking below</p>
+                    <input type="file" id="file-input" accept="application/pdf">
+                    <label for="file-input" class="button">Upload PDF</label>
+                </form>
+            </div>
+            <div id="file-list"></div>
+        </div>
+
+        <div class="options-section">
+            <h3>Options</h3>
+            <div class="options-grid">
+                <div style="grid-column: 1 / -1;">
+                    <label for="topic-model-select"><b>Topic AI Model:</b> (For finding topics)</label>
+                    <select id="topic-model-select">
+                        <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
+                        <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (Recommended)</option>
+                        <option value="gemini-2.5-pro">Gemini 2.5 Pro (Slower, High Quality)</option>
+                    </select>
+                </div>
+                <div style="grid-column: 1 / -1;">
+                    <label for="explanation-model-select"><b>Explanation AI Model:</b> (For explaining topics)</label>
+                    <select id="explanation-model-select">
+                        <option value="gemini-2.5-flash-lite" selected>Gemini 2.5 Flash Lite (Fast)</option>
+                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended)</option>
+                        <option value="gemini-2.5-pro">Gemini 2.5 Pro (Slower, High Quality)</option>
+                    </select>
+                </div>
+                <div style="grid-column: 1 / -1; border-top: 1px solid #eee; padding-top: 15px; margin-top: 10px;">
+                    <label for="max-parallel-input">Max parallel tasks:</label>
+                    <input type="number" id="max-parallel-input" value="10" min="1" style="width: 100px;">
+                    <label for="max-parallel-input" style="font-weight: normal; display: inline;">(Limits concurrent AI calls to save memory/avoid errors)</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="action-section">
+            <button id="generate-button" disabled>Generate Anki Deck</button>
+        </div>
+
+        <div id="progress-area"></div>
+        <div id="json-error" class="error-message" style="display: none;"></div>
+        <div id="download-area"></div>
+
+        <button type="button" class="collapsible">Stats</button>
+        <div class="content">
+            <div id="stats-area"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- Setup Libraries ---
+        config = {
+            locateFile: filename => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${filename}`
+        }
+        var SQL;
+        initSqlJs(config).then(function (sql) {
+            SQL = sql;
+        });
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+        // --- Get DOM Elements ---
+        const dropArea = document.getElementById('drop-area');
+        const fileInput = document.getElementById('file-input');
+        const generateButton = document.getElementById('generate-button');
+        const fileList = document.getElementById('file-list');
+        const progressArea = document.getElementById('progress-area');
+        const statsArea = document.getElementById('stats-area');
+        const downloadArea = document.getElementById('download-area');
+        const apiKeysTextarea = document.getElementById('api-keys-textarea');
+        const saveKeyButton = document.getElementById('save-key-button');
+        const clearKeyButton = document.getElementById('clear-key-button');
+        const jsonError = document.getElementById('json-error');
+
+        // --- Options ---
+        const topicModelSelect = document.getElementById('topic-model-select');
+        const explanationModelSelect = document.getElementById('explanation-model-select');
+        const maxParallelInput = document.getElementById('max-parallel-input');
+
+        // --- State ---
+        let pdfFile = null;
+        let keyPool = []; // To manage multiple API keys
+
+        // --- Event Listeners ---
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+        dropArea.addEventListener('drop', handleDrop, false);
+        fileInput.addEventListener('change', handleFiles, false);
+        generateButton.addEventListener('click', generateAnkiDeck, false);
+        apiKeysTextarea.addEventListener('input', checkReady);
+        saveKeyButton.addEventListener('click', saveApiKeys);
+        clearKeyButton.addEventListener('click', clearApiKeys);
+
+        // Add listeners for all options
+        [topicModelSelect, explanationModelSelect, maxParallelInput].forEach(el => { 
+            el.addEventListener('change', saveOptions);
+        });
+
+        // --- Initial Load ---
+        loadApiKeys();
+        loadOptions();
+
+        // --- Drag and Drop Handlers ---
+        function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+        function highlight() { dropArea.classList.add('highlight'); }
+        function unhighlight() { dropArea.classList.remove('highlight'); }
+        function handleDrop(e) { 
+            preventDefaults(e);
+            handleFiles(e.dataTransfer.files); 
+        }
+
+        function handleFiles(filesOrEvent) {
+            let files;
+            if (filesOrEvent instanceof Event) {
+                files = filesOrEvent.target.files;
+            } else {
+                files = filesOrEvent;
+            }
+
+            if (files && files.length > 0) {
+                pdfFile = files[0];
+                updateFileList();
+                checkReady();
+            }
+        }
+        function updateFileList() {
+            fileList.innerHTML = '<h3>Selected File:</h3>';
+            if (pdfFile) {
+                const div = document.createElement('div');
+                div.className = 'file-item';
+                div.innerHTML = `
+                    <span>${pdfFile.name}</span>
+                    <span class="remove-file" style="cursor: pointer; color: red;" onclick="clearFile()">&#10005;</span>
+                `;
+                fileList.appendChild(div);
+            }
+        }
+
+        function clearFile() {
+            pdfFile = null;
+            fileList.innerHTML = '';
+            fileInput.value = '';
+            checkReady();
+        }
+
+        function checkReady() {
+            generateButton.disabled = !(pdfFile && apiKeysTextarea.value.trim() !== '');
+        }
+
+        // --- API Key Storage Functions ---
+        function saveApiKeys() {
+            const apiKeys = apiKeysTextarea.value;
+            if (apiKeys) {
+                localStorage.setItem('geminiAnkiApiKeys', apiKeys);
+                alert('API Keys saved to browser storage.');
+            } else {
+                alert('Please enter at least one API key to save.');
+            }
+        }
+
+        function clearApiKeys() {
+            localStorage.removeItem('geminiAnkiApiKeys');
+            apiKeysTextarea.value = '';
+            checkReady();
+            alert('API Keys cleared from browser storage.');
+        }
+
+        function loadApiKeys() {
+            const savedKeys = localStorage.getItem('geminiAnkiApiKeys');
+            if (savedKeys) {
+                apiKeysTextarea.value = savedKeys;
+                checkReady();
+            }
+        }
+
+        // --- Options Storage Functions ---
+        function saveOptions() {
+            localStorage.setItem('geminiAnkiTopicOptions', JSON.stringify({
+                topicModel: topicModelSelect.value,
+                explanationModel: explanationModelSelect.value,
+                maxParallel: maxParallelInput.value
+            }));
+        }
+
+        function loadOptions() {
+            const savedOptions = localStorage.getItem('geminiAnkiTopicOptions');
+            if (savedOptions) {
+                try {
+                    const options = JSON.parse(savedOptions);
+                    if (options.topicModel) topicModelSelect.value = options.topicModel;
+                    if (options.explanationModel) explanationModelSelect.value = options.explanationModel;
+                    if (options.maxParallel) maxParallelInput.value = options.maxParallel;
+                } catch (e) {
+                    console.error("Failed to load saved options:", e);
+                    localStorage.removeItem('geminiAnkiTopicOptions'); // Clear corrupted data
+                }
+            }
+        }
+        
+        // --- Progress and Error Updates ---
+        function updateProgress(message, percentage) {
+            let percentValue = percentage;
+            if (typeof percentValue === 'undefined') {
+                 const progressBarFill = document.querySelector('.progress-bar-fill');
+                 percentValue = progressBarFill ? progressBarFill.style.width : '0%';
+            }
+            
+            progressArea.innerHTML = `
+                <p>${message}</p>
+                <div class="progress-bar">
+                    <span class="progress-bar-fill" style="width: ${percentValue};"></span>
+                </div>
+            `;
+        }
+
+        function showError(message) {
+            jsonError.textContent = message;
+            jsonError.style.display = 'block';
+            updateProgress("Error encountered.", 0);
+            generateButton.disabled = false;
+        }
+
+        // --- Main Anki Generation Logic ---
+        async function generateAnkiDeck() {
+            generateButton.disabled = true;
+            jsonError.style.display = 'none';
+            statsArea.innerHTML = '';
+            downloadArea.innerHTML = '';
+            updateProgress("Starting...", 0);
+
+            if (!pdfFile || !apiKeysTextarea.value.trim()) {
+                showError("Please provide both a PDF file and at least one Gemini API Key.");
+                return;
+            }
+
+            // Initialize the key pool
+            const apiKeysString = apiKeysTextarea.value.trim();
+            keyPool = apiKeysString.split('\n')
+                .filter(k => k.trim() !== '')
+                .map(key => ({ key: key.trim(), availableAt: 0 }));
+
+            if (keyPool.length === 0) {
+                showError("Please provide at least one valid API Key.");
+                return;
+            }
+
+            let pdfDoc;
+
+            // Get options
+            const topicModel = topicModelSelect.value;
+            const explanationModel = explanationModelSelect.value;
+
+            try {
+                updateProgress("Loading PDF...", 5);
+                pdfDoc = await pdfjsLib.getDocument(URL.createObjectURL(pdfFile)).promise;
+
+                updateProgress("Extracting text from all pages...", 10);
+                const allPagesText = await extractAllText(pdfDoc);
+
+                if (!allPagesText.trim()) {
+                    showError("Could not extract any text from the PDF. The PDF might be image-based.");
+                    return;
+                }
+
+                updateProgress("Asking AI to identify topics...", 20);
+                const topicsJSON = await callGeminiForTopics(allPagesText, topicModel);
+
+                if (!topicsJSON || !Array.isArray(topicsJSON)) {
+                    showError("AI did not return valid JSON for topics. Check console for details.");
+                    console.error("Invalid JSON response:", topicsJSON);
+                    return;
+                }
+
+                // Flatten the topics JSON into a list of strings
+                const topicList = flattenTopics(topicsJSON);
+                if (topicList.length === 0) {
+                    showError("AI found 0 topics. Nothing to generate.");
+                    return;
+                }
+
+                updateProgress(`AI found ${topicList.length} topics. Starting deck generation...`, 30);
+                await createDeckFromTopics(topicList, allPagesText, explanationModel);
+
+                updateProgress("Anki deck generated!", 100);
+
+            } catch (error) {
+                showError(`An error occurred: ${error.message}`);
+                console.error(error);
+            } finally {
+                generateButton.disabled = false;
+            }
+        }
+        
+        /**
+         * Flattens the nested topic structure into a simple list of strings.
+         * e.g., { "topic": "A", "subtopics": ["B", "C"] } -> ["A: B", "A: C"]
+         */
+        function flattenTopics(topicsJSON) {
+            const flatList = [];
+            for (const section of topicsJSON) {
+                const mainTopic = section.topic || "Topic";
+                if (section.subtopics && Array.isArray(section.subtopics) && section.subtopics.length > 0) {
+                    for (const sub of section.subtopics) {
+                        flatList.push(`${mainTopic}: ${sub}`);
+                    }
+                } else {
+                    // If no subtopics, just add the main topic
+                    flatList.push(mainTopic);
+                }
+            }
+            return flatList;
+        }
+
+
+        /**
+         * Extracts text from every page of the PDF.
+         */
+        async function extractAllText(pdfDoc) {
+            let allText = '';
+            for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+                const page = await pdfDoc.getPage(pageNum);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str).join(' ');
+                allText += `\n\n--- PAGE ${pageNum} ---\n${pageText}\n`;
+            }
+            return allText;
+        }
+
+        // --- Helper function for sleeping ---
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        // --- New Countdown Timer ---
+        async function showWaitingCountdown(totalWaitMs, baseMessage, percentage) {
+            updateProgress(`${baseMessage} Waiting for ${Math.ceil(totalWaitMs / 1000)}s...`, percentage);
+            await sleep(totalWaitMs);
+        }
+
+        // --- Universal API caller with retry logic ---
+        // This is copied from your reference file and is very robust.
+        async function callGeminiWithRetry(prompt, generationConfig = null, model = 'gemini-2.5-flash-lite', fileBytesBase64 = null) {
+            if (!keyPool || keyPool.length === 0) {
+                throw new Error("API Key pool is empty.");
+            }
+
+            let retryCount = 0;
+
+            while (true) {
+                const now = Date.now();
+                
+                let keyEntry = null;
+                for (const entry of keyPool) {
+                    if (now >= entry.availableAt) {
+                        keyEntry = entry;
+                        break; 
+                    }
+                }
+                
+                const progressBarFill = document.querySelector('.progress-bar-fill');
+                const currentPercentage = progressBarFill ? progressBarFill.style.width : '0%';
+                const currentProgressMessage = progressArea.querySelector('p') ? progressArea.querySelector('p').textContent : 'Processing...';
+
+                if (!keyEntry) {
+                    const soonestAvailableTime = Math.min(...keyPool.map(k => k.availableAt));
+                    const waitMs = (soonestAvailableTime - now) + 1000;
+                    
+                    console.warn(`All keys busy/rate-limited. Waiting for ${waitMs / 1000}s...`);
+                    await showWaitingCountdown(waitMs, `All keys busy. Pausing... (Retry #${retryCount})`, currentPercentage);
+                    updateProgress(currentProgressMessage, currentPercentage);
+                    continue;
+                }
+
+                const apiKey = keyEntry.key;
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+                const parts = [{ text: prompt }];
+                if (fileBytesBase64) {
+                    parts.push({
+                        inlineData: {
+                            mimeType: 'application/pdf',
+                            data: fileBytesBase64
+                        }
+                    });
+                }
+                
+                const body = {
+                    contents: [{ parts: parts }]
+                };
+
+                if (generationConfig) {
+                    body.generationConfig = generationConfig;
+                }
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts[0]) {
+                            return data.candidates[0].content.parts[0].text; // SUCCESS!
+                        } else {
+                            throw new Error("Invalid successful response structure from Gemini.");
+                        }
+                    }
+
+                    const errorBody = await response.json();
+                    const errorMessage = errorBody.error ? errorBody.error.message : "Unknown API error";
+
+                    if (response.status === 503 || errorMessage.includes("model is overloaded")) {
+                        const waitMs = 15000;
+                        keyEntry.availableAt = Date.now() + waitMs;
+                        console.warn(`Model is overloaded for key ...${apiKey.slice(-4)}. Retrying after ${waitMs / 1000}s.`);
+                        updateProgress(`Model overloaded (Key: ...${apiKey.slice(-4)}). Trying next key... (Retry #${retryCount})`, currentPercentage);
+                        await sleep(500); 
+                        updateProgress(currentProgressMessage, currentPercentage);
+                        retryCount++;
+                        continue;
+                    }
+
+                    if (errorMessage.includes("Quota exceeded") && errorMessage.includes("Please retry in")) {
+                        const match = errorMessage.match(/Please retry in ([\d\.]+)s/);
+                        if (match && match[1]) {
+                            const waitTimeS = parseFloat(match[1]);
+                            if (waitTimeS > 300) {
+                                throw new Error(`Rate limit retry time (${waitTimeS.toFixed(1)}s) for key ...${apiKey.slice(-4)} exceeds 5 minutes. Aborting.`);
+                            }
+                            const waitMs = (waitTimeS * 1000) + 1000;
+                            keyEntry.availableAt = Date.now() + waitMs; 
+                            console.warn(`Gemini rate limit hit for key ...${apiKey.slice(-4)}. Setting cool-down for ${waitTimeS.toFixed(1)}s.`);
+                            updateProgress(`Key ...${apiKey.slice(-4)} rate-limited. Trying next key... (Retry #${retryCount})`, currentPercentage);
+                            await sleep(500);
+                            updateProgress(currentProgressMessage, currentPercentage);
+                            retryCount++;
+                            continue;
+                        }
+                    }
+                    
+                    if (response.status === 400 || response.status === 403) {
+                         keyEntry.availableAt = Date.now() + 86400000; // Disable for 24h
+                         console.error(`API Key ...${apiKey.slice(-4)} is invalid or unauthorized. Disabling it for 24h.`);
+                         updateProgress(`Key ...${apiKey.slice(-4)} is invalid. Trying next... (Retry #${retryCount})`, currentPercentage);
+                         await sleep(500);
+                         updateProgress(currentProgressMessage, currentPercentage);
+                         retryCount++;
+                         continue;
+                    }
+
+                    throw new Error(`Gemini API error (Key: ...${apiKey.slice(-4)}): ${errorMessage}`);
+
+                } catch (error) {
+                    console.error(`Network or fetch error (Key: ...${apiKey.slice(-4)}):`, error);
+                    keyEntry.availableAt = Date.now() + 30000;
+                    console.warn(`Pausing key ...${apiKey.slice(-4)} for 30s due to network error.`);
+                    retryCount++;
+                    continue;
+                }
+            }
+        }
+
+
+        /**
+         * First Gemini call: To get the list of topics.
+         */
+        async function callGeminiForTopics(allPagesText, model) {
+            const config = { responseMimeType: "application/json" };
+            const prompt = `
+                Task:
+                Analyze the provided text from a PDF and identify all the main topics and their corresponding subtopics.
+                Your goal is to create a comprehensive outline of the document.
+                
+                Instructions:
+                - **Language:** Your response (especially the "topic" and "subtopics" fields) **must** be in the primary language detected from the input.
+                - Be thorough. Extract topics from the entire document.
+                - Group related subtopics under a main topic.
+                
+                Step 2: Output Format (JSON)
+                Return ONLY a valid JSON array following this structure. Do not include any other text or markdown fences.
+                
+                [
+                  {
+                    "topic": "A descriptive title for the first main topic",
+                    "subtopics": [
+                        "First subtopic of topic 1",
+                        "Second subtopic of topic 1"
+                    ]
+                  },
+                  {
+                    "topic": "Title for the second main topic",
+                    "subtopics": [
+                        "First subtopic of topic 2"
+                    ]
+                  },
+                  {
+                    "topic": "A topic with no subtopics",
+                    "subtopics": []
+                  }
+                ]
+                
+                Here is the PDF text:
+                ${allPagesText}
+            `;
+            
+            let jsonString = await callGeminiWithRetry(prompt, config, model, null);
+
+            // Clean the JSON string (copied from your reference)
+            if (typeof jsonString === 'string') {
+                const firstBrace = jsonString.indexOf('[');
+                const firstCurly = jsonString.indexOf('{');
+                let start = (firstBrace === -1) ? firstCurly : (firstCurly === -1) ? firstBrace : Math.min(firstBrace, firstCurly);
+                const lastBrace = jsonString.lastIndexOf(']');
+                const lastCurly = jsonString.lastIndexOf('}');
+                let end = Math.max(lastBrace, lastCurly);
+
+                if (start === -1 || end === -1 || end < start) {
+                     console.error("AI response had mismatched delimiters:", jsonString);
+                     throw new Error("AI response had mismatched JSON delimiters.");
+                }
+                jsonString = jsonString.substring(start, end + 1);
+            }
+
+            try {
+                return JSON.parse(jsonString);
+            } catch (e) {
+                console.error("Failed to parse cleaned JSON string:", jsonString);
+                throw new Error(`AI returned malformed JSON after cleaning: ${e.message}`);
+            }
+        }
+
+        /**
+         * Second Gemini call: To explain a single topic.
+         */
+        async function callGeminiForExplanation(topic, contextText, model) {
+            const prompt = `
+                Task:
+                You are an expert tutor. A student wants to learn about a specific topic from a PDF they are reading.
+                Your task is to provide a **good, simple explanation** of the given topic.
+                Use the "Full PDF Text" as context to ensure your explanation is accurate and relevant to the document.
+                
+                Instructions:
+                - **Language:** Respond in the **same language** as the provided topic and text.
+                - **Clarity is key:** Explain the concept simply. Do not just repeat text from the PDF.
+                - **Format:** Structure your explanation using simple HTML tags like <p>, <ul>, <li>, and <i>.
+                - **Emphasis:** For emphasis/bolding, use <b>...</b> tags. DO NOT use markdown asterisks (\`**...**\`).
+                - **Formulas (Crucial!):**
+                    - For **inline math**, use the format: \\(...\\) (e.g., \\( E = mc^2 \\)).
+                    - For **display/block math**, use the format: \\[...\\] (e.g., \\[ \\sum_{i=1}^{n} i = \\frac{n(n+1)}{2} \\]).
+                    - **DO NOT** use single dollar signs ($...$) for math.
+                - **Response:** Respond ONLY with the HTML-formatted explanation. Do not add any preamble like "Here is the explanation:", "Sure!", or markdown fences.
+                
+                ---
+                TOPIC TO EXPLAIN:
+                "${topic}"
+                ---
+                FULL PDF TEXT (for context):
+                ${contextText}
+            `;
+
+            try {
+                return await callGeminiWithRetry(prompt, null, model); 
+            } catch (error) {
+                console.error(`Error in explanation call for topic "${topic}":`, error);
+                return `<p>(AI explanation failed: ${error.message})</p>`;
+            }
+        }
+
+        /**
+         * Processes a single topic and returns a Note object.
+         */
+        async function processTopic(topic, contextText, model, genankiModel) {
+            const explanation = await callGeminiForExplanation(topic, contextText, model);
+            
+            const note = genankiModel.note([
+                topic,         // Front (Topic)
+                explanation    // Back (Explanation)
+            ]);
+            
+            // Return the note and topic for stats
+            return { note, topic };
+        }
+
+
+        /**
+         * Creates the .apkg file from the list of topics.
+         */
+        async function createDeckFromTopics(topicList, contextText, explanationModel) {
+            // --- Model and Deck Setup ---
+            const m = new Model({
+                name: "AI Topics - " + Date.now(),
+                id: "1543634829846", // Different ID from slide model
+                flds: [
+                    { name: "Topic" },      // Front
+                    { name: "Explanation" },// Back
+                ],
+                req: [[0, "all", [0]]], // Card 1 is created from "Topic"
+                tmpls: [{
+                    name: "Card 1",
+                    qfmt: "{{Topic}}",
+                    afmt: "{{FrontSide}}<hr id=answer><div class=\"back-content\">{{Explanation}}</div>",
+                }],
+                css: `
+                    .card { font-family: arial; font-size: 20px; text-align: center; color: black; background-color: white; }
+                    .back-content { 
+                        font-size: 16px; 
+                        display: inline-block; 
+                        text-align: left; 
+                        width: 100%; 
+                        max-width: 700px; 
+                        line-height: 1.6; 
+                        margin: 10px auto; 
+                        padding: 10px; 
+                        background-color: #f9f9f9; 
+                        border-radius: 5px; 
+                        border: 1px solid #eee; 
+                    }
+                    /* Ensure MathJax/LaTeX renders correctly */
+                    .MathJax_Display {
+                        display: block;
+                        margin: 1em 0;
+                        text-align: center;
+                    }
+                `,
+            });
+
+            const deckName = pdfFile.name.replace(/\.[^/.]+$/, "");
+            const d = new Deck(Date.now(), deckName);
+            // --- End of Setup ---
+
+            // --- Concurrency Limit Logic ---
+            const totalTopics = topicList.length;
+            const maxParallelThreads = parseInt(maxParallelInput.value) || 10;
+            updateProgress(`Processing ${totalTopics} topics (in parallel batches of ${maxParallelThreads})...`, 30);
+            
+            const results = new Array(totalTopics).fill(null);
+            let completedCount = 0;
+
+            const runTask = async (index) => {
+                const topic = topicList[index];
+                try {
+                    const result = await processTopic(topic, contextText, explanationModel, m);
+                    results[index] = { status: 'fulfilled', value: result };
+                } catch (error) {
+                    results[index] = { status: 'rejected', reason: error };
+                }
+                
+                completedCount++;
+                const progressPercent = 30 + (completedCount / totalTopics) * 65; // 30% to 95%
+                updateProgress(`Processing topic ${completedCount} of ${totalTopics}...`, progressPercent);
+            };
+
+            const pool = new Set();
+            for (let i = 0; i < totalTopics; i++) {
+                const promise = runTask(i);
+                pool.add(promise);
+                promise.then(() => pool.delete(promise));
+                if (pool.size >= maxParallelThreads) {
+                    await Promise.race(pool);
+                }
+            }
+            await Promise.allSettled(Array.from(pool));
+            // --- End Concurrency Logic ---
+
+            // --- Process results ---
+            const allNotes = [];
+            const cardStats = [];
+            let failedSections = 0;
+
+            results.forEach((result, index) => {
+                if (result.status === 'fulfilled') {
+                    const { note, topic } = result.value;
+                    allNotes.push(note);
+                    cardStats.push(topic);
+                } else {
+                    const topic = topicList[index];
+                    console.error(`Failed to process topic "${topic}":`, result.reason);
+                    failedSections++;
+                }
+            });
+            
+            allNotes.forEach(note => d.addNote(note));
+            
+            if (failedSections > 0) {
+                const successfulCards = allNotes.length;
+                showError(`Warning: ${failedSections} card(s) failed to generate. ${successfulCards} card(s) were created successfully. Check console for details.`);
+            }
+
+            updateProgress("Creating .apkg file...", 95);
+            const p = new Package();
+            p.addDeck(d);
+            const apkgArrayBuffer = await p.writeToFile(`${deckName}.apkg`);
+
+            const blob = new Blob([apkgArrayBuffer], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const downloadLink = document.createElement('a');
+            downloadLink.href = url;
+            downloadLink.download = `${deckName}.apkg`;
+            downloadLink.textContent = `Download ${deckName}.apkg`;
+            downloadArea.appendChild(downloadLink);
+
+            updateStats(deckName, allNotes.length, cardStats);
+        }
+
+        // --- Utility Functions ---
+        function updateStats(deckName, totalCards, cardStats) {
+            let statsHTML = `<h3>Stats for ${deckName}</h3>`;
+            statsHTML += `<p>Total Anki cards created: ${totalCards}</p>`;
+            statsHTML += `<h4>Topics added:</h4>`;
+            statsHTML += `<ul style="font-size: 0.9em; max-height: 200px; overflow-y: auto; background: #fafafa; border: 1px solid #eee; padding: 10px;">`;
+            for (const topic of cardStats) {
+                statsHTML += `<li>${topic}</li>`;
+            }
+            statsHTML += `</ul>`;
+            statsArea.innerHTML = statsHTML;
+        }
+
+        var coll = document.getElementsByClassName("collapsible");
+        for (let i = 0; i < coll.length; i++) {
+            coll[i].addEventListener("click", function () {
+                this.classList.toggle("active");
+                var content = this.nextElementSibling;
+                if (content.style.display === "block") {
+                    content.style.display = "none";
+                } else {
+                    content.style.display = "block";
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>
