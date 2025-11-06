@@ -601,84 +601,86 @@
                 : `Step 1: Identify Logical Sections
                 Group pages together that cover a single, distinct topic.`;
 
-            if (inputType === 'file') {
-                prompt = `
-                Task:
-                Analyze the provided PDF presentation and structure it for Anki card creation.
+                        if (inputType === 'file') {
+                                prompt = `
+                                Task:
+                                Analyze the provided PDF presentation and structure it for Anki card creation.
                 
-                ${step1Instruction}
+                                ${step1Instruction}
 
-                Step 2: Filter Unwanted Slides
-                - Your filtering must be strict. REMOVE any slides that are purely administrative or structural.
-                - This includes, but is not limited to:
-                  - Main title pages (e.g., "Presentation Title", "By [Author]")
-                  - Section divider slides (e.g., "Part 2: The Next Step")
-                  - "Agenda", "Outline", or "Overview" slides.
-                  - "Learning Objectives" slides.
-                  - "Thank you", "Questions?", or "Contact Information" slides.
-                  - Any slide with almost no content (e.g., just a title and no body, or a single image).
-                - For incremental slides (where one slide builds on the previous one), identify the *final* slide in that sequence and include ONLY that final slide in the "pages" array.
+                                Step 2: Filter Only Truly Useless Slides
+                                - Only REMOVE slides that are purely administrative or structural and contain NO actual new content.
+                                - Examples of slides to remove:
+                                    - Main title pages (e.g., "Presentation Title", "By [Author]")
+                                    - Section divider slides (e.g., "Part 2: The Next Step")
+                                    - "Agenda", "Outline", or "Overview" slides.
+                                    - "Learning Objectives" slides.
+                                    - "Thank you", "Questions?", or "Contact Information" slides.
+                                    - Slides that are blank or have almost no content (e.g., just a title and no body, or a single image).
+                                - DO NOT remove any slide that introduces new information, concepts, or explanations, even if it is labeled as a summary, recap, or conclusion, as long as it contains actual new content.
+                                - For incremental slides (where one slide builds on the previous one), identify the *final* slide in that sequence and include ONLY that final slide in the "pages" array.
                 
-                Step 3: Output Format (JSON)
-                Return ONLY a valid JSON array following this structure. Do not include any other text or markdown fences.
-                The page numbers should be 1-based (e.g., the first page is 1).
+                                Step 3: Output Format (JSON)
+                                Return ONLY a valid JSON array following this structure. Do not include any other text or markdown fences.
+                                The page numbers should be 1-based (e.g., the first page is 1).
                 
-                - **Language:** Your response (especially the "title" fields) **must** be in the primary language detected from the input (e.g., if the text is in German, the titles must be in German).
+                                - **Language:** Your response (especially the "title" fields) **must** be in the primary language detected from the input (e.g., if the text is in German, the titles must be in German).
 
-                [
-                  {
-                    "title": "A descriptive title for this section",
-                    "pages": [/* array of page numbers (integers) in this group */]
-                  },
-                  {
-                    "title": "Title for the next section",
-                    "pages": [/* ... */]
-                  }
-                ]
+                                [
+                                    {
+                                        "title": "A descriptive title for this section",
+                                        "pages": [/* array of page numbers (integers) in this group */]
+                                    },
+                                    {
+                                        "title": "Title for the next section",
+                                        "pages": [/* ... */]
+                                    }
+                                ]
                 
-                Analyze the attached PDF file and return the JSON.
-                `;
-                filePayload = pdfDataB64;
-            } else {
-                prompt = `
-                Task:
-                Analyze the provided text content from a slide presentation and structure it for Anki card creation.
-                The text is formatted with "--- PAGE [number] ---" delimiters.
+                                Analyze the attached PDF file and return the JSON.
+                                `;
+                                filePayload = pdfDataB64;
+                        } else {
+                                prompt = `
+                                Task:
+                                Analyze the provided text content from a slide presentation and structure it for Anki card creation.
+                                The text is formatted with "--- PAGE [number] ---" delimiters.
                 
-                ${step1Instruction}
+                                ${step1Instruction}
 
-                Step 2: Filter Unwanted Slides
-                - Your filtering must be strict. REMOVE any slides that are purely administrative or structural.
-                - This includes, but is not limited to:
-                  - Main title pages (e.g., "Presentation Title", "By [Author]")
-                  - Section divider slides (e.g., "Part 2: The Next Step")
-                  - "Agenda", "Outline", or "Overview" slides.
-                  - "Learning Objectives" slides.
-                  - "Thank you", "Questions?", or "Contact Information" slides.
-                  - Any slide with almost no content (e.g., just a title and no body, or a single image).
-                - For incremental slides (where one slide builds on the previous one), identify the *final* slide in that sequence and include ONLY that final slide in the "pages" array.
+                                Step 2: Filter Only Truly Useless Slides
+                                - Only REMOVE slides that are purely administrative or structural and contain NO actual new content.
+                                - Examples of slides to remove:
+                                    - Main title pages (e.g., "Presentation Title", "By [Author]")
+                                    - Section divider slides (e.g., "Part 2: The Next Step")
+                                    - "Agenda", "Outline", or "Overview" slides.
+                                    - "Learning Objectives" slides.
+                                    - "Thank you", "Questions?", or "Contact Information" slides.
+                                    - Slides that are blank or have almost no content (e.g., just a title and no body, or a single image).
+                                - DO NOT remove any slide that introduces new information, concepts, or explanations, even if it is labeled as a summary, recap, or conclusion, as long as it contains actual new content.
+                                - For incremental slides (where one slide builds on the previous one), identify the *final* slide in that sequence and include ONLY that final slide in the "pages" array.
                 
-                Step 3: Output Format (JSON)
-                Return ONLY a valid JSON array following this structure. Do not include any other text or markdown fences.
+                                Step 3: Output Format (JSON)
+                                Return ONLY a valid JSON array following this structure. Do not include any other text or markdown fences.
 
-                - **Language:** Your response (especially the "title" fields) **must** be in the primary language detected from the input (e.g., if the text is in German, the titles must be in German).
+                                - **Language:** Your response (especially the "title" fields) **must** be in the primary language detected from the input (e.g., if the text is in German, the titles must be in German).
                 
-                [
-                  {
-                    "title": "A descriptive title for this section",
-                    "pages": [/* array of page numbers (integers) in this group */]
-                  },
-                  {
-                    "title": "Title for the next section",
-                    "pages": [/* ... */]
-                  }
-                ]
+                                [
+                                    {
+                                        "title": "A descriptive title for this section",
+                                        "pages": [/* array of page numbers (integers) in this group */]
+                                    },
+                                    {
+                                        "title": "Title for the next section",
+                                        "pages": [/* ... */]
+                                    }
+                                ]
                 
-                Here is the slide text:
-                ${allPagesText}
-                `;
-                filePayload = null;
-            }
+                                Here is the slide text:
+                                ${allPagesText}
+                                `;
+                                filePayload = null;
+                        }
             
             let jsonString = await callGeminiWithRetry(prompt, config, model, filePayload);
 
