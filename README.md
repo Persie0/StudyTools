@@ -44,8 +44,10 @@ Clean up incrementally built presentation slides by removing intermediate steps.
 - [Try PDF Page Stripper](./pdfPageStripper/stripper.html)
 
 ### 4. JSON to Anki Deck Converter
-Convert JSON data into Anki flashcards effortlessly.
-- Supports custom card formats
+Convert JSON, PDF, or text content into Anki flashcards - now with AI support!
+- **Three input modes**: JSON, PDF upload, or text input
+- **AI-powered**: Uses Gemini AI to automatically generate flashcards from PDFs and text
+- **Flexible**: Direct JSON input for manual control
 - Instant feedback on JSON validity
 - [Try JSON to Anki Deck Converter](./jsonToAnki/jsonToAnki.html)
 
