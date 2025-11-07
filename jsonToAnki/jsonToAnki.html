@@ -253,6 +253,9 @@
         const apiKeySection = document.getElementById('api-key-section');
         const pdfFileName = document.getElementById('pdf-file-name');
 
+        // Constants
+        const MIN_TEXT_LENGTH = 50;
+
         // State
         let currentMode = 'json';
         let pdfFile = null;
@@ -367,6 +370,15 @@
                 return null;
             }
 
+            // Basic API key format validation
+            if (!apiKey.startsWith('AIza') || apiKey.length < 30) {
+                alert('Invalid API key format. Gemini API keys typically start with "AIza". Please check your key.');
+                return null;
+            }
+
+            // Sanitize content to prevent potential issues
+            const sanitizedContent = content.replace(/[`${}]/g, '');
+
             const prompt = `You are a helpful assistant that creates Anki flashcards from study material. 
             
 Analyze the following content and create high-quality flashcards. Each flashcard should have:
@@ -379,7 +391,7 @@ Return ONLY a valid JSON array in this exact format:
 [{"front": "question", "back": "answer"}, {"front": "question", "back": "answer"}]
 
 Content to analyze:
-${content}`;
+${sanitizedContent}`;
 
             try {
                 updateProgress('Generating flashcards with AI...', 30);
@@ -452,7 +464,7 @@ ${content}`;
                     updateProgress('Extracting text from PDF...', 10);
                     const pdfText = await extractTextFromPdf(pdfFile);
                     
-                    if (!pdfText || pdfText.trim().length < 50) {
+                    if (!pdfText || pdfText.trim().length < MIN_TEXT_LENGTH) {
                         alert('Could not extract enough text from PDF. Please try a different file.');
                         return;
                     }
