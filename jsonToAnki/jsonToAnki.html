@@ -224,13 +224,17 @@
         }
 
         var SQL;
-        initSqlJs(config).then(function (sql) {
-            //Create the database
-            SQL = sql;
-        });
+        if (typeof initSqlJs !== 'undefined') {
+            initSqlJs(config).then(function (sql) {
+                //Create the database
+                SQL = sql;
+            }).catch(err => console.warn('SQL.js initialization failed:', err));
+        }
 
         // Initialize PDF.js
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        if (typeof pdfjsLib !== 'undefined') {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        }
 
         // Get DOM Elements
         const jsonFileInput = document.getElementById('json-file-input');
