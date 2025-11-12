@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JSON to Anki Deck Converter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/krmanik/genanki-js/dist/genanki.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -16,19 +17,16 @@
             background-color: #f0f2f5;
             color: #333;
             margin: 0;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
+            padding: 20px;
         }
         .container {
             background-color: #fff;
             padding: 2rem;
             border-radius: 10px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            max-width: 600px;
+            max-width: 800px;
             width: 100%;
+            margin: 0 auto;
         }
         h1 {
             font-size: 1.5rem;
@@ -93,6 +91,58 @@
         #download-area a:hover {
             text-decoration: underline;
         }
+        .input-mode-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 1rem;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        .tab.active {
+            color: #007bff;
+            border-bottom-color: #007bff;
+            font-weight: 600;
+        }
+        .tab:hover {
+            color: #0056b3;
+        }
+        .input-section {
+            display: none;
+        }
+        .input-section.active {
+            display: block;
+        }
+        .api-key-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            display: none;
+        }
+        .api-key-section.active {
+            display: block;
+        }
+        .info-box {
+            background-color: #e7f3ff;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
     </style>
 </head>
 
@@ -101,19 +151,65 @@
         <h1>JSON to Anki Deck Converter<a href="https://github.com/Persie0/StudyTools/tree/main/jsonToAnki#readme"
                 target="_blank" class="github-icon github-btn"><i class="fab fa-github"></i></a>
         </h1>
-        <div id="json-area">
+        
+        <div class="info-box">
+            <p><strong>Multiple Input Options:</strong></p>
+            <ul style="margin: 10px 0; padding-left: 20px;">
+                <li><strong>JSON:</strong> Direct JSON format for flashcards</li>
+                <li><strong>PDF:</strong> Upload a PDF and let AI extract flashcards</li>
+                <li><strong>Text:</strong> Paste text content and let AI generate flashcards</li>
+            </ul>
+            <p><small>Note: PDF and Text modes require a Google Gemini API key.</small></p>
+        </div>
+
+        <div class="input-mode-tabs">
+            <button class="tab active" data-mode="json">JSON Input</button>
+            <button class="tab" data-mode="pdf">PDF Upload</button>
+            <button class="tab" data-mode="text">Text Input</button>
+        </div>
+
+        <div class="api-key-section" id="api-key-section">
+            <label for="api-key-input"><strong>Gemini API Key:</strong></label>
+            <input type="text" id="api-key-input" placeholder="Enter your Google Gemini API key">
+            <div class="button-group">
+                <button class="button" id="save-key-button">Save Key</button>
+                <button class="button" id="clear-key-button" style="background-color: #dc3545;">Clear Key</button>
+            </div>
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" style="display: block; margin-top: 10px; font-size: 0.9rem;">Get your API key here</a>
+        </div>
+
+        <div id="json-section" class="input-section active">
             <form class="my-form">
                 <p>Upload JSON file or enter JSON data</p>
-                <input type="file" id="file-input" accept="application/json">
-                <label for="file-input" class="button">Select JSON file</label>
+                <input type="file" id="json-file-input" accept="application/json" style="display: none;">
+                <label for="json-file-input" class="button">Select JSON file</label>
                 <textarea id="json-input" rows="10" cols="50" placeholder='[{"front": "What is the capital of France?", "back": "Paris"}, {"front": "What is 2 + 2?", "back": "4"}]'></textarea>
-                <button type="button" class="button" id="copy-example">Copy Example</button>
-                <button type="button" class="button" id="copy-example-prompt">Copy Example + Prompt</button>
+                <div class="button-group">
+                    <button type="button" class="button" id="copy-example">Copy Example</button>
+                    <button type="button" class="button" id="copy-example-prompt">Copy Example + Prompt</button>
+                </div>
             </form>
         </div>
+
+        <div id="pdf-section" class="input-section">
+            <form class="my-form">
+                <p>Upload PDF file to generate flashcards with AI</p>
+                <input type="file" id="pdf-file-input" accept="application/pdf" style="display: none;">
+                <label for="pdf-file-input" class="button">Select PDF file</label>
+                <div id="pdf-file-name" style="margin-top: 10px; color: #666;"></div>
+            </form>
+        </div>
+
+        <div id="text-section" class="input-section">
+            <form class="my-form">
+                <p>Enter or paste text content to generate flashcards with AI</p>
+                <textarea id="text-input" rows="15" cols="50" placeholder="Paste your study material here..."></textarea>
+            </form>
+        </div>
+
         <div id="deck-title">
             <label for="deck-title-input">Deck Title:</label>
-            <input type="text" id="deck-title-input" value="Default Deck Title">
+            <input type="text" id="deck-title-input" value="My Anki Deck">
         </div>
         <button id="generate-button" class="button">Generate Anki Deck</button>
         <div id="progress-area"></div>
@@ -128,22 +224,95 @@
         }
 
         var SQL;
-        initSqlJs(config).then(function (sql) {
-            //Create the database
-            SQL = sql;
-        });
+        if (typeof initSqlJs !== 'undefined') {
+            initSqlJs(config).then(function (sql) {
+                //Create the database
+                SQL = sql;
+            }).catch(err => console.warn('SQL.js initialization failed:', err));
+        }
 
-        const fileInput = document.getElementById('file-input');
+        // Initialize PDF.js
+        if (typeof pdfjsLib !== 'undefined') {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        }
+
+        // Get DOM Elements
+        const jsonFileInput = document.getElementById('json-file-input');
+        const pdfFileInput = document.getElementById('pdf-file-input');
         const jsonInput = document.getElementById('json-input');
+        const textInput = document.getElementById('text-input');
         const generateButton = document.getElementById('generate-button');
         const progressArea = document.getElementById('progress-area');
         const downloadArea = document.getElementById('download-area');
         const deckTitleInput = document.getElementById('deck-title-input');
         const copyExampleButton = document.getElementById('copy-example');
         const copyExamplePromptButton = document.getElementById('copy-example-prompt');
+        const apiKeyInput = document.getElementById('api-key-input');
+        const saveKeyButton = document.getElementById('save-key-button');
+        const clearKeyButton = document.getElementById('clear-key-button');
+        const apiKeySection = document.getElementById('api-key-section');
+        const pdfFileName = document.getElementById('pdf-file-name');
 
-        // Handle selected file
-        fileInput.addEventListener('change', handleFile, false);
+        // Constants
+        const MIN_TEXT_LENGTH = 50;
+
+        // State
+        let currentMode = 'json';
+        let pdfFile = null;
+
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                const mode = this.getAttribute('data-mode');
+                switchMode(mode);
+            });
+        });
+
+        function switchMode(mode) {
+            currentMode = mode;
+            
+            // Update tabs
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
+            
+            // Update sections
+            document.querySelectorAll('.input-section').forEach(s => s.classList.remove('active'));
+            document.getElementById(`${mode}-section`).classList.add('active');
+            
+            // Show/hide API key section for PDF and Text modes
+            if (mode === 'pdf' || mode === 'text') {
+                apiKeySection.classList.add('active');
+            } else {
+                apiKeySection.classList.remove('active');
+            }
+        }
+
+        // Load saved API key
+        const savedApiKey = localStorage.getItem('gemini-api-key');
+        if (savedApiKey) {
+            apiKeyInput.value = savedApiKey;
+        }
+
+        // API Key management
+        saveKeyButton.addEventListener('click', function() {
+            const apiKey = apiKeyInput.value.trim();
+            if (apiKey) {
+                localStorage.setItem('gemini-api-key', apiKey);
+                alert('API key saved to browser!');
+            }
+        });
+
+        clearKeyButton.addEventListener('click', function() {
+            localStorage.removeItem('gemini-api-key');
+            apiKeyInput.value = '';
+            alert('API key cleared from browser!');
+        });
+
+        // Handle JSON file selection
+        jsonFileInput.addEventListener('change', handleJsonFile, false);
+
+        // Handle PDF file selection
+        pdfFileInput.addEventListener('change', handlePdfFile, false);
 
         // Handle generate button click
         generateButton.addEventListener('click', generateAnkiDeck, false);
@@ -154,13 +323,20 @@
         // Handle copy example + prompt button click
         copyExamplePromptButton.addEventListener('click', copyExamplePrompt, false);
 
-        function handleFile(event) {
+        function handleJsonFile(event) {
             const file = event.target.files[0];
             const reader = new FileReader();
             reader.onload = function(e) {
                 jsonInput.value = e.target.result;
             };
             reader.readAsText(file);
+        }
+
+        function handlePdfFile(event) {
+            pdfFile = event.target.files[0];
+            if (pdfFile) {
+                pdfFileName.textContent = `Selected: ${pdfFile.name}`;
+            }
         }
 
         function updateProgress(message, percentage) {
@@ -172,79 +348,211 @@
             `;
         }
 
+        async function extractTextFromPdf(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+            let fullText = '';
+
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str).join(' ');
+                fullText += pageText + '\n\n';
+            }
+
+            return fullText;
+        }
+
+        async function generateFlashcardsWithGemini(content) {
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey) {
+                alert('Please enter your Gemini API key');
+                return null;
+            }
+
+            // Basic API key format validation
+            if (!apiKey.startsWith('AIza') || apiKey.length < 30) {
+                alert('Invalid API key format. Gemini API keys typically start with "AIza". Please check your key.');
+                return null;
+            }
+
+            // Sanitize content to prevent potential issues
+            const sanitizedContent = content.replace(/[`${}]/g, '');
+
+            const prompt = `You are a helpful assistant that creates Anki flashcards from study material. 
+            
+Analyze the following content and create high-quality flashcards. Each flashcard should have:
+- A clear, concise question or prompt (front)
+- A complete, accurate answer (back)
+
+Create 10-20 flashcards covering the most important concepts, facts, and key points.
+
+Return ONLY a valid JSON array in this exact format:
+[{"front": "question", "back": "answer"}, {"front": "question", "back": "answer"}]
+
+Content to analyze:
+${sanitizedContent}`;
+
+            try {
+                updateProgress('Generating flashcards with AI...', 30);
+                
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{
+                                text: prompt
+                            }]
+                        }]
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`API request failed: ${response.status} - ${errorText}`);
+                }
+
+                const data = await response.json();
+                
+                if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+                    throw new Error('Invalid response from Gemini API');
+                }
+
+                let textResponse = data.candidates[0].content.parts[0].text;
+                
+                // Clean up the response - remove markdown code blocks if present
+                textResponse = textResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+                
+                // Parse the JSON
+                const flashcards = JSON.parse(textResponse);
+                
+                if (!Array.isArray(flashcards)) {
+                    throw new Error('Response is not an array');
+                }
+
+                return flashcards;
+            } catch (error) {
+                console.error('Error generating flashcards:', error);
+                alert(`Error generating flashcards: ${error.message}`);
+                return null;
+            }
+        }
+
         async function generateAnkiDeck() {
-            updateProgress("Processing JSON...", 0);
+            updateProgress("Processing...", 0);
             downloadArea.innerHTML = ''; // Clear previous download links
 
-            const deckTitle = deckTitleInput.value || "Default Deck Title";
+            const deckTitle = deckTitleInput.value || "My Anki Deck";
             const deckId = Date.now(); // Use timestamp for consistent, incremental ID
             var d = new Deck(deckId, deckTitle);
 
             let jsonData;
+
             try {
-                jsonData = JSON.parse(jsonInput.value);
+                if (currentMode === 'json') {
+                    // JSON mode - parse directly
+                    jsonData = JSON.parse(jsonInput.value);
+                } else if (currentMode === 'pdf') {
+                    // PDF mode - extract text and generate with AI
+                    if (!pdfFile) {
+                        alert('Please select a PDF file');
+                        return;
+                    }
+                    updateProgress('Extracting text from PDF...', 10);
+                    const pdfText = await extractTextFromPdf(pdfFile);
+                    
+                    if (!pdfText || pdfText.trim().length < MIN_TEXT_LENGTH) {
+                        alert('Could not extract enough text from PDF. Please try a different file.');
+                        return;
+                    }
+                    
+                    jsonData = await generateFlashcardsWithGemini(pdfText);
+                    if (!jsonData) return;
+                    
+                } else if (currentMode === 'text') {
+                    // Text mode - use text directly with AI
+                    const textContent = textInput.value.trim();
+                    if (!textContent) {
+                        alert('Please enter some text content');
+                        return;
+                    }
+                    
+                    jsonData = await generateFlashcardsWithGemini(textContent);
+                    if (!jsonData) return;
+                }
+
+                if (!jsonData || !Array.isArray(jsonData) || jsonData.length === 0) {
+                    alert('No valid flashcard data generated');
+                    return;
+                }
+
+                updateProgress('Creating Anki deck...', 60);
+
+                // Create a model with front and back fields
+                var m = new Model({
+                    name: "Basic",
+                    id: "1543634829845",
+                    flds: [
+                        { name: "Front" },
+                        { name: "Back" }
+                    ],
+                    req: [[0, "all", [0]]],
+                    tmpls: [
+                        {
+                            name: "Card 1",
+                            qfmt: "{{Front}}",
+                            afmt: "{{FrontSide}}<hr id=answer>{{Back}}"
+                        }
+                    ],
+                    css: `
+                        .card {
+                            font-family: arial;
+                            font-size: 20px;
+                            text-align: center;
+                            color: black;
+                            background-color: white;
+                        }
+                    `
+                });
+
+                // Add notes to the deck
+                jsonData.forEach((item, index) => {
+                    const note = m.note([
+                        item.front,
+                        item.back
+                    ]);
+                    d.addNote(note);
+                    updateProgress(`Adding card ${index + 1} of ${jsonData.length}`, 60 + ((index + 1) / jsonData.length) * 30);
+                });
+
+                updateProgress(`Packaging Anki deck...`, 90);
+
+                // Create a package and add the deck
+                var p = new Package();
+                p.addDeck(d);
+
+                // Generate the .apkg file
+                const apkgArrayBuffer = await p.writeToFile(`${deckTitle}.apkg`);
+
+                // Create download link
+                const blob = new Blob([apkgArrayBuffer], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                const downloadLink = document.createElement('a');
+                downloadLink.href = url;
+                downloadLink.download = `${deckTitle}.apkg`;
+                downloadLink.textContent = `Download ${deckTitle}.apkg`;
+                downloadArea.appendChild(downloadLink);
+                downloadArea.appendChild(document.createElement('br'));
+
+                updateProgress(`Anki deck generated! (${jsonData.length} cards)`, 100);
             } catch (e) {
-                alert("Invalid JSON data");
-                return;
+                console.error('Error:', e);
+                alert(`Error generating deck: ${e.message}`);
+                progressArea.innerHTML = '';
             }
-
-            // Create a model with front and back fields
-            var m = new Model({
-                name: "Basic",
-                id: "1543634829845", // Changed ID to differentiate from the old model
-                flds: [
-                    { name: "Front" },
-                    { name: "Back" }
-                ],
-                req: [[0, "all", [0]]],
-                tmpls: [
-                    {
-                        name: "Card 1",
-                        qfmt: "{{Front}}",
-                        afmt: "{{FrontSide}}<hr id=answer>{{Back}}"
-                    }
-                ],
-                css: `
-                    .card {
-                        font-family: arial;
-                        font-size: 20px;
-                        text-align: center;
-                        color: black;
-                        background-color: white;
-                    }
-                `
-            });
-
-            // Add notes to the deck
-            jsonData.forEach((item, index) => {
-                const note = m.note([
-                    item.front,
-                    item.back
-                ]);
-                d.addNote(note);
-                updateProgress(`Processing card ${index + 1} of ${jsonData.length}`, ((index + 1) / jsonData.length) * 100);
-            });
-
-            updateProgress(`Creating Anki deck for ${deckTitle}...`, 90);
-
-            // Create a package and add the deck
-            var p = new Package();
-            p.addDeck(d);
-
-            // Generate the .apkg file
-            const apkgArrayBuffer = await p.writeToFile(`${deckTitle}.apkg`);
-
-            // Create download link
-            const blob = new Blob([apkgArrayBuffer], { type: 'application/octet-stream' });
-            const url = URL.createObjectURL(blob);
-            const downloadLink = document.createElement('a');
-            downloadLink.href = url;
-            downloadLink.download = `${deckTitle}.apkg`;
-            downloadLink.textContent = `Download ${deckTitle}.apkg`;
-            downloadArea.appendChild(downloadLink);
-            downloadArea.appendChild(document.createElement('br'));
-
-            updateProgress("Anki deck generated!", 100);
         }
 
         function copyExample() {

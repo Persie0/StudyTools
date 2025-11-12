@@ -247,19 +247,29 @@
 
         <div class="tool-card">
             <h2>JSON to Anki Deck Converter</h2>
-            <p>Convert JSON data into Anki flashcards effortlessly.</p>
+            <p>Convert JSON, PDF, or text content into Anki flashcards - now with AI support!</p>
             <ul class="features">
-                <li>Supports custom card formats</li>
+                <li>Three input modes: JSON, PDF upload, or text input</li>
+                <li>AI-powered flashcard generation with Gemini</li>
+                <li>Direct JSON input for manual control</li>
                 <li>Instant feedback on JSON validity</li>
             </ul>
             <button class="usage-toggle" onclick="toggleUsage('json-anki-usage')">Show Usage</button>
             <div id="json-anki-usage" class="usage-details">
                 <h3>How to Use:</h3>
+                <p><strong>JSON Mode:</strong></p>
                 <ol>
                     <li>Paste your JSON data into the input field</li>
-                    <li>Click "Convert to Anki Deck"</li>
-                    <li>Download your Anki deck</li>
-                    <li>Import the deck into Anki</li>
+                    <li>Click "Generate Anki Deck"</li>
+                    <li>Download and import into Anki</li>
+                </ol>
+                <p><strong>PDF/Text Mode:</strong></p>
+                <ol>
+                    <li>Switch to PDF Upload or Text Input tab</li>
+                    <li>Enter your Gemini API key (get one free from Google)</li>
+                    <li>Upload PDF or paste text content</li>
+                    <li>Let AI generate flashcards automatically</li>
+                    <li>Download and import into Anki</li>
                 </ol>
             </div>
             <a href="./jsonToAnki/jsonToAnki.html" class="btn">Try JSON to Anki</a>
