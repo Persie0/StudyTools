@@ -646,6 +646,14 @@ if there are multiple slides create new json response for each.
             document.getElementById('removed-slides-summary').innerHTML = '';
             downloadArea.innerHTML = '';
             
+            // Validate that at least one PDF is uploaded
+            if (pdfs.length === 0) {
+                jsonError.textContent = 'Please upload at least one PDF file';
+                jsonError.style.display = 'block';
+                updateProgress("", 0);
+                return;
+            }
+            
             const selectedMode = document.querySelector('input[name="mode"]:checked').value;
             
             if (selectedMode === 'json') {
