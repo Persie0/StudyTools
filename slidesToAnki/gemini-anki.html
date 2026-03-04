@@ -111,6 +111,11 @@
                     <input type="number" id="max-parallel-input" value="10" min="1" style="width: 100px;">
                     <label for="max-parallel-input" style="font-weight: normal; display: inline;">(Limits concurrent AI calls/image renders to save memory)</label>
                 </div>
+                <div style="grid-column: 1 / -1; border-top: 1px solid #eee; padding-top: 15px; margin-top: 10px;" id="cors-proxy-container">
+                    <label for="cors-proxy-input"><b>NVIDIA CORS Proxy URL:</b></label>
+                    <input type="text" id="cors-proxy-input" value="https://corsproxy.io/?" style="width: 100%; max-width: 400px;" placeholder="e.g. https://corsproxy.io/?">
+                    <br><small style="color: #666;">NVIDIA API requires a proxy URL to bypass browser CORS rules. Leave blank if using a browser extension like 'Allow CORS'.</small>
+                </div>
                 <div style="grid-column: 1 / -1; border-top: 1px solid #eee; padding-top: 15px; margin-top: 10px;">
                     <input type="checkbox" id="detailed-grouping-checkbox">
                     <label for="detailed-grouping-checkbox"><b>Enable detailed (smaller) slide grouping</b><br>(Creates more cards with fewer slides each. Good for long or dense PDFs.)</label>
@@ -176,6 +181,7 @@
         const groupingInputText = document.getElementById('input-text');
         const groupingInputFile = document.getElementById('input-file');
         const maxParallelInput = document.getElementById('max-parallel-input');
+        const corsProxyInput = document.getElementById('cors-proxy-input');
 
         const PROVIDER_DEFAULT_MODEL = {
             gemini: 'gemini-2.5-flash',
@@ -231,7 +237,7 @@
             compressImagesCheckbox, includeTextCheckbox, slideBySlideCheckbox, 
             maxResolutionInput, maxSizeInput, groupingModelSelect,
             groupingInputText, groupingInputFile, detailedGroupingCheckbox,
-            maxParallelInput, autoCropCheckbox
+            maxParallelInput, autoCropCheckbox, corsProxyInput
         ].forEach(el => { 
             el.addEventListener('change', saveOptions);
         });
@@ -328,6 +334,11 @@
             if (isNvidia && groupingInputFile.checked) {
                 groupingInputText.checked = true;
                 groupingInputFile.checked = false;
+            }
+
+            const corsProxyContainer = document.getElementById('cors-proxy-container');
+            if (corsProxyContainer) {
+                corsProxyContainer.style.display = isNvidia ? 'block' : 'none';
             }
 
             buildProviderModelSelect(provider);
@@ -429,7 +440,8 @@
                 groupingModel: groupingModelSelect.value,
                 groupingModelByProvider: groupingModelByProvider,
                 groupingInput: groupingInputText.checked ? 'text' : 'file',
-                maxParallel: maxParallelInput.value
+                maxParallel: maxParallelInput.value,
+                corsProxyUrl: corsProxyInput.value
             }));
         }
 
@@ -447,6 +459,7 @@
                     if (options.maxResolution) maxResolutionInput.value = options.maxResolution;
                     if (options.maxSize) maxSizeInput.value = options.maxSize;
                     if (options.maxParallel) maxParallelInput.value = options.maxParallel;
+                    if (options.corsProxyUrl !== undefined) corsProxyInput.value = options.corsProxyUrl;
 
                     if (options.groupingModelByProvider && typeof options.groupingModelByProvider === 'object') {
                         groupingModelByProvider = {
@@ -681,7 +694,10 @@
                         throw new Error("NVIDIA API mode currently supports text-only grouping input. Switch to 'Send Extracted Text'.");
                     }
 
-                    url = 'https://integrate.api.nvidia.com/v1/chat/completions';
+                    const baseNvidiaUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
+                    const proxyUrl = document.getElementById('cors-proxy-input').value.trim();
+                    url = proxyUrl ? proxyUrl + baseNvidiaUrl : baseNvidiaUrl;
+
                     headers.Authorization = `Bearer ${apiKey}`;
                     body = {
                         model: selectedModel,
