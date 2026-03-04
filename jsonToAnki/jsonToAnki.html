@@ -159,7 +159,7 @@
                 <li><strong>PDF:</strong> Upload a PDF and let AI extract flashcards</li>
                 <li><strong>Text:</strong> Paste text content and let AI generate flashcards</li>
             </ul>
-            <p><small>Note: PDF and Text modes require a Google Gemini API key.</small></p>
+            <p><small>Note: PDF and Text modes require either a Google Gemini or NVIDIA API key.</small></p>
         </div>
 
         <div class="input-mode-tabs">
@@ -169,13 +169,18 @@
         </div>
 
         <div class="api-key-section" id="api-key-section">
-            <label for="api-key-input"><strong>Gemini API Key:</strong></label>
-            <input type="text" id="api-key-input" placeholder="Enter your Google Gemini API key">
+            <label for="ai-provider-select"><strong>AI Provider:</strong></label>
+            <select id="ai-provider-select" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem; border: 1px solid #ccc; border-radius: 5px; font-size: 1rem;">
+                <option value="gemini" selected>Google Gemini</option>
+                <option value="nvidia">NVIDIA NIM</option>
+            </select>
+            <label for="api-key-input"><strong>AI API Key:</strong></label>
+            <input type="text" id="api-key-input" placeholder="Enter your API key">
             <div class="button-group">
                 <button class="button" id="save-key-button">Save Key</button>
                 <button class="button" id="clear-key-button" style="background-color: #dc3545;">Clear Key</button>
             </div>
-            <a href="https://aistudio.google.com/app/apikey" target="_blank" style="display: block; margin-top: 10px; font-size: 0.9rem;">Get your API key here</a>
+            <a id="api-key-help-link" href="https://aistudio.google.com/app/apikey" target="_blank" style="display: block; margin-top: 10px; font-size: 0.9rem;">Get your API key here</a>
         </div>
 
         <div id="json-section" class="input-section active">
@@ -252,9 +257,17 @@
         const clearKeyButton = document.getElementById('clear-key-button');
         const apiKeySection = document.getElementById('api-key-section');
         const pdfFileName = document.getElementById('pdf-file-name');
+        const aiProviderSelect = document.getElementById('ai-provider-select');
+        const apiKeyHelpLink = document.getElementById('api-key-help-link');
 
         // Constants
         const MIN_TEXT_LENGTH = 50;
+        const API_KEYS_STORAGE_KEY = 'jsonToAnkiApiKeysByProvider';
+        const AI_PROVIDER_STORAGE_KEY = 'jsonToAnkiAiProvider';
+        const DEFAULT_MODELS = {
+            gemini: 'gemini-2.0-flash-exp',
+            nvidia: 'meta/llama-3.3-70b-instruct'
+        };
 
         // State
         let currentMode = 'json';
@@ -267,6 +280,62 @@
                 switchMode(mode);
             });
         });
+
+        aiProviderSelect.addEventListener('change', function () {
+            localStorage.setItem(AI_PROVIDER_STORAGE_KEY, getSelectedProvider());
+            updateProviderUi();
+            loadApiKeyForCurrentProvider();
+        });
+
+        function getSelectedProvider() {
+            return aiProviderSelect.value === 'nvidia' ? 'nvidia' : 'gemini';
+        }
+
+        function loadProviderKeyStore() {
+            const raw = localStorage.getItem(API_KEYS_STORAGE_KEY);
+            if (!raw) {
+                return {};
+            }
+
+            try {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object') {
+                    return parsed;
+                }
+            } catch (error) {
+                console.warn('Failed to parse key store:', error);
+            }
+            return {};
+        }
+
+        function saveProviderKeyStore(keyStore) {
+            localStorage.setItem(API_KEYS_STORAGE_KEY, JSON.stringify(keyStore));
+        }
+
+        function updateProviderUi() {
+            const provider = getSelectedProvider();
+            const isNvidia = provider === 'nvidia';
+
+            apiKeyHelpLink.href = isNvidia
+                ? 'https://build.nvidia.com/'
+                : 'https://aistudio.google.com/app/apikey';
+            apiKeyHelpLink.textContent = isNvidia
+                ? 'Get your NVIDIA API key here'
+                : 'Get your Gemini API key here';
+        }
+
+        function loadApiKeyForCurrentProvider() {
+            const provider = getSelectedProvider();
+            const keyStore = loadProviderKeyStore();
+            let savedKey = keyStore[provider];
+
+            // Backwards compatibility with legacy Gemini-only key storage.
+            if (!savedKey && provider === 'gemini') {
+                savedKey = localStorage.getItem('gemini-api-key');
+            }
+
+            apiKeyInput.value = savedKey || '';
+        }
 
         function switchMode(mode) {
             currentMode = mode;
@@ -287,23 +356,41 @@
             }
         }
 
-        // Load saved API key
-        const savedApiKey = localStorage.getItem('gemini-api-key');
-        if (savedApiKey) {
-            apiKeyInput.value = savedApiKey;
+        // Initialize provider + key state.
+        const savedProvider = localStorage.getItem(AI_PROVIDER_STORAGE_KEY);
+        if (savedProvider === 'nvidia' || savedProvider === 'gemini') {
+            aiProviderSelect.value = savedProvider;
         }
+        updateProviderUi();
+        loadApiKeyForCurrentProvider();
 
         // API Key management
         saveKeyButton.addEventListener('click', function() {
             const apiKey = apiKeyInput.value.trim();
             if (apiKey) {
-                localStorage.setItem('gemini-api-key', apiKey);
+                const provider = getSelectedProvider();
+                const keyStore = loadProviderKeyStore();
+                keyStore[provider] = apiKey;
+                saveProviderKeyStore(keyStore);
+
+                // Backwards compatibility with legacy Gemini-only key storage.
+                if (provider === 'gemini') {
+                    localStorage.setItem('gemini-api-key', apiKey);
+                }
                 alert('API key saved to browser!');
             }
         });
 
         clearKeyButton.addEventListener('click', function() {
-            localStorage.removeItem('gemini-api-key');
+            const provider = getSelectedProvider();
+            const keyStore = loadProviderKeyStore();
+            delete keyStore[provider];
+            saveProviderKeyStore(keyStore);
+
+            if (provider === 'gemini') {
+                localStorage.removeItem('gemini-api-key');
+            }
+
             apiKeyInput.value = '';
             alert('API key cleared from browser!');
         });
@@ -363,16 +450,55 @@
             return fullText;
         }
 
-        async function generateFlashcardsWithGemini(content) {
-            const apiKey = apiKeyInput.value.trim();
-            if (!apiKey) {
-                alert('Please enter your Gemini API key');
+        function validateApiKeyFormat(provider, apiKey) {
+            if (provider === 'gemini') {
+                if (!apiKey.startsWith('AIza') || apiKey.length < 30) {
+                    return 'Invalid API key format. Gemini API keys typically start with "AIza".';
+                }
                 return null;
             }
 
-            // Basic API key format validation
-            if (!apiKey.startsWith('AIza') || apiKey.length < 30) {
-                alert('Invalid API key format. Gemini API keys typically start with "AIza". Please check your key.');
+            if (!apiKey.startsWith('nvapi-') || apiKey.length < 20) {
+                return 'Invalid API key format. NVIDIA API keys typically start with "nvapi-".';
+            }
+            return null;
+        }
+
+        function extractFlashcardsArrayFromResponse(textResponse) {
+            const cleaned = textResponse.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
+
+            const firstArray = cleaned.indexOf('[');
+            const lastArray = cleaned.lastIndexOf(']');
+            if (firstArray !== -1 && lastArray > firstArray) {
+                return JSON.parse(cleaned.slice(firstArray, lastArray + 1));
+            }
+
+            const firstObject = cleaned.indexOf('{');
+            const lastObject = cleaned.lastIndexOf('}');
+            if (firstObject !== -1 && lastObject > firstObject) {
+                const parsedObject = JSON.parse(cleaned.slice(firstObject, lastObject + 1));
+                if (Array.isArray(parsedObject)) {
+                    return parsedObject;
+                }
+                if (Array.isArray(parsedObject.flashcards)) {
+                    return parsedObject.flashcards;
+                }
+            }
+
+            return JSON.parse(cleaned);
+        }
+
+        async function generateFlashcardsWithAI(content) {
+            const provider = getSelectedProvider();
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey) {
+                alert(`Please enter your ${provider === 'nvidia' ? 'NVIDIA' : 'Gemini'} API key`);
+                return null;
+            }
+
+            const keyValidationError = validateApiKeyFormat(provider, apiKey);
+            if (keyValidationError) {
+                alert(`${keyValidationError} Please check your key.`);
                 return null;
             }
 
@@ -395,20 +521,36 @@ ${sanitizedContent}`;
 
             try {
                 updateProgress('Generating flashcards with AI...', 30);
-                
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        contents: [{
-                            parts: [{
-                                text: prompt
+
+                let response;
+                if (provider === 'gemini') {
+                    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODELS.gemini}:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [{
+                                    text: prompt
+                                }]
                             }]
-                        }]
-                    })
-                });
+                        })
+                    });
+                } else {
+                    response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${apiKey}`
+                        },
+                        body: JSON.stringify({
+                            model: DEFAULT_MODELS.nvidia,
+                            messages: [{ role: 'user', content: prompt }],
+                            temperature: 0.2
+                        })
+                    });
+                }
 
                 if (!response.ok) {
                     const errorText = await response.text();
@@ -416,18 +558,27 @@ ${sanitizedContent}`;
                 }
 
                 const data = await response.json();
-                
-                if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
-                    throw new Error('Invalid response from Gemini API');
+
+                let textResponse = '';
+                if (provider === 'gemini') {
+                    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+                        throw new Error('Invalid response from Gemini API');
+                    }
+                    textResponse = data.candidates[0].content.parts[0].text;
+                } else {
+                    const nvidiaContent = data?.choices?.[0]?.message?.content;
+                    if (typeof nvidiaContent === 'string') {
+                        textResponse = nvidiaContent;
+                    } else if (Array.isArray(nvidiaContent)) {
+                        textResponse = nvidiaContent
+                            .map(part => typeof part === 'string' ? part : part?.text || '')
+                            .join('\n');
+                    } else {
+                        throw new Error('Invalid response from NVIDIA API');
+                    }
                 }
 
-                let textResponse = data.candidates[0].content.parts[0].text;
-                
-                // Clean up the response - remove markdown code blocks if present
-                textResponse = textResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-                
-                // Parse the JSON
-                const flashcards = JSON.parse(textResponse);
+                const flashcards = extractFlashcardsArrayFromResponse(textResponse);
                 
                 if (!Array.isArray(flashcards)) {
                     throw new Error('Response is not an array');
@@ -469,7 +620,7 @@ ${sanitizedContent}`;
                         return;
                     }
                     
-                    jsonData = await generateFlashcardsWithGemini(pdfText);
+                    jsonData = await generateFlashcardsWithAI(pdfText);
                     if (!jsonData) return;
                     
                 } else if (currentMode === 'text') {
@@ -480,7 +631,7 @@ ${sanitizedContent}`;
                         return;
                     }
                     
-                    jsonData = await generateFlashcardsWithGemini(textContent);
+                    jsonData = await generateFlashcardsWithAI(textContent);
                     if (!jsonData) return;
                 }
 

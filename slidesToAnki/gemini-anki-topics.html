@@ -28,7 +28,7 @@
         <div class="info-box">
             <p><b>How it works:</b>
             <ol>
-                <li>Enter one or more Google AI (Gemini) API Keys (one per line). (You can save these to your browser).</li>
+                <li>Select an AI provider and enter one or more API keys (one per line). (You can save these to your browser).</li>
                 <li>Upload a single PDF file.</li>
                 <li>The app extracts all text from your PDF.</li>
                 <li>It sends the full text to the "Topic AI Model" to get a JSON list of all topics and subtopics.</li>
@@ -41,13 +41,20 @@
         </div>
 
         <div class="config-section">
-            <label for="api-keys-textarea">Gemini API Keys (one per line):</label>
-            <textarea id="api-keys-textarea" rows="4" placeholder="Enter one or more Google AI API Keys here, each on a new line..."></textarea>
+            <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                <label for="ai-provider-select"><b>AI Provider:</b></label>
+                <select id="ai-provider-select">
+                    <option value="gemini" selected>Google Gemini</option>
+                    <option value="nvidia">NVIDIA NIM</option>
+                </select>
+            </div>
+            <label for="api-keys-textarea">AI API Keys (one per line):</label>
+            <textarea id="api-keys-textarea" rows="4" placeholder="Enter one or more API keys here, each on a new line..."></textarea>
             <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px;">
                  <button id="save-key-button" style="padding: 10px 15px;">Save Keys</button>
                  <button id="clear-key-button" style="padding: 10px 15px; background-color: #dc3545;">Clear Keys</button>
             </div>
-            <a href="https://aistudio.google.com/app/apikey" target="_blank" style="display: block; margin-top: 5px;">Get your API key here</a>
+            <a id="api-key-help-link" href="https://aistudio.google.com/app/apikey" target="_blank" style="display: block; margin-top: 5px;">Get your API key here</a>
         </div>
 
         <div class="upload-section">
@@ -66,19 +73,11 @@
             <div class="options-grid">
                 <div style="grid-column: 1 / -1;">
                     <label for="topic-model-select"><b>Topic AI Model:</b> (For finding topics)</label>
-                    <select id="topic-model-select">
-                        <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
-                        <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (Recommended)</option>
-                        <option value="gemini-2.5-pro">Gemini 2.5 Pro (Slower, High Quality)</option>
-                    </select>
+                    <select id="topic-model-select"></select>
                 </div>
                 <div style="grid-column: 1 / -1;">
                     <label for="explanation-model-select"><b>Explanation AI Model:</b> (For explaining topics)</label>
-                    <select id="explanation-model-select">
-                        <option value="gemini-2.5-flash-lite" selected>Gemini 2.5 Flash Lite (Fast)</option>
-                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended)</option>
-                        <option value="gemini-2.5-pro">Gemini 2.5 Pro (Slower, High Quality)</option>
-                    </select>
+                    <select id="explanation-model-select"></select>
                 </div>
                 <div style="grid-column: 1 / -1; border-top: 1px solid #eee; padding-top: 15px; margin-top: 10px;">
                     <label for="max-parallel-input">Max parallel tasks:</label>
@@ -125,15 +124,47 @@
         const saveKeyButton = document.getElementById('save-key-button');
         const clearKeyButton = document.getElementById('clear-key-button');
         const jsonError = document.getElementById('json-error');
+        const aiProviderSelect = document.getElementById('ai-provider-select');
+        const apiKeyHelpLink = document.getElementById('api-key-help-link');
 
         // --- Options ---
         const topicModelSelect = document.getElementById('topic-model-select');
         const explanationModelSelect = document.getElementById('explanation-model-select');
         const maxParallelInput = document.getElementById('max-parallel-input');
 
+        const PROVIDER_DEFAULT_MODELS = {
+            gemini: {
+                topic: 'gemini-2.5-flash',
+                explanation: 'gemini-2.5-flash-lite'
+            },
+            nvidia: {
+                topic: 'meta/llama-3.3-70b-instruct',
+                explanation: 'meta/llama-3.3-70b-instruct'
+            }
+        };
+
+        const PROVIDER_MODEL_OPTIONS = {
+            gemini: [
+                { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
+                { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Recommended)' },
+                { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Slower, High Quality)' }
+            ],
+            nvidia: [
+                { value: 'meta/llama-3.3-70b-instruct', label: 'Llama 3.3 70B Instruct (Balanced)' },
+                { value: 'nvidia/llama-3.1-nemotron-70b-instruct', label: 'Nemotron 70B Instruct (Reasoning)' },
+                { value: 'mistralai/mixtral-8x7b-instruct-v0.1', label: 'Mixtral 8x7B Instruct (Fast)' }
+            ]
+        };
+
+        const API_KEYS_STORAGE_KEY = 'geminiAnkiApiKeysByProvider';
+
         // --- State ---
         let pdfFile = null;
         let keyPool = []; // To manage multiple API keys
+        let modelSelectionsByProvider = {
+            gemini: { ...PROVIDER_DEFAULT_MODELS.gemini },
+            nvidia: { ...PROVIDER_DEFAULT_MODELS.nvidia }
+        };
 
         // --- Event Listeners ---
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -150,17 +181,21 @@
         fileInput.addEventListener('change', handleFiles, false);
         generateButton.addEventListener('click', generateAnkiDeck, false);
         apiKeysTextarea.addEventListener('input', checkReady);
+        aiProviderSelect.addEventListener('change', handleProviderChange);
         saveKeyButton.addEventListener('click', saveApiKeys);
         clearKeyButton.addEventListener('click', clearApiKeys);
+        topicModelSelect.addEventListener('change', handleTopicModelChange);
+        explanationModelSelect.addEventListener('change', handleExplanationModelChange);
 
         // Add listeners for all options
-        [topicModelSelect, explanationModelSelect, maxParallelInput].forEach(el => { 
+        [maxParallelInput].forEach(el => { 
             el.addEventListener('change', saveOptions);
         });
 
         // --- Initial Load ---
-        loadApiKeys();
         loadOptions();
+        syncProviderUi();
+        loadApiKeys();
 
         // --- Drag and Drop Handlers ---
         function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
@@ -209,11 +244,99 @@
             generateButton.disabled = !(pdfFile && apiKeysTextarea.value.trim() !== '');
         }
 
+        function getSelectedProvider() {
+            return aiProviderSelect.value === 'nvidia' ? 'nvidia' : 'gemini';
+        }
+
+        function getProviderName(provider = getSelectedProvider()) {
+            return provider === 'nvidia' ? 'NVIDIA' : 'Gemini';
+        }
+
+        function loadProviderKeyStore() {
+            const raw = localStorage.getItem(API_KEYS_STORAGE_KEY);
+            if (!raw) {
+                return {};
+            }
+
+            try {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object') {
+                    return parsed;
+                }
+            } catch (error) {
+                console.warn('Failed to parse provider key store:', error);
+            }
+            return {};
+        }
+
+        function saveProviderKeyStore(keyStore) {
+            localStorage.setItem(API_KEYS_STORAGE_KEY, JSON.stringify(keyStore));
+        }
+
+        function rebuildModelSelect(selectElement, provider, modelType) {
+            const options = PROVIDER_MODEL_OPTIONS[provider] || PROVIDER_MODEL_OPTIONS.gemini;
+            selectElement.innerHTML = options
+                .map(option => `<option value="${option.value}">${option.label}</option>`)
+                .join('');
+
+            let selected = modelSelectionsByProvider[provider]?.[modelType]
+                || PROVIDER_DEFAULT_MODELS[provider][modelType];
+            const isValid = options.some(option => option.value === selected);
+            if (!isValid) {
+                selected = options[0].value;
+            }
+            selectElement.value = selected;
+            modelSelectionsByProvider[provider][modelType] = selected;
+        }
+
+        function syncProviderUi() {
+            const provider = getSelectedProvider();
+            const isNvidia = provider === 'nvidia';
+
+            apiKeyHelpLink.href = isNvidia
+                ? 'https://build.nvidia.com/'
+                : 'https://aistudio.google.com/app/apikey';
+            apiKeyHelpLink.textContent = isNvidia
+                ? 'Get your NVIDIA API key here'
+                : 'Get your Gemini API key here';
+
+            rebuildModelSelect(topicModelSelect, provider, 'topic');
+            rebuildModelSelect(explanationModelSelect, provider, 'explanation');
+        }
+
+        function handleProviderChange() {
+            syncProviderUi();
+            loadApiKeys();
+            saveOptions();
+            checkReady();
+        }
+
+        function handleTopicModelChange() {
+            const provider = getSelectedProvider();
+            modelSelectionsByProvider[provider].topic = topicModelSelect.value;
+            saveOptions();
+        }
+
+        function handleExplanationModelChange() {
+            const provider = getSelectedProvider();
+            modelSelectionsByProvider[provider].explanation = explanationModelSelect.value;
+            saveOptions();
+        }
+
         // --- API Key Storage Functions ---
         function saveApiKeys() {
             const apiKeys = apiKeysTextarea.value;
             if (apiKeys) {
-                localStorage.setItem('geminiAnkiApiKeys', apiKeys);
+                const provider = getSelectedProvider();
+                const keyStore = loadProviderKeyStore();
+                keyStore[provider] = apiKeys;
+                saveProviderKeyStore(keyStore);
+
+                // Backwards compatibility for existing Gemini-only storage.
+                if (provider === 'gemini') {
+                    localStorage.setItem('geminiAnkiApiKeys', apiKeys);
+                }
+
                 alert('API Keys saved to browser storage.');
             } else {
                 alert('Please enter at least one API key to save.');
@@ -221,25 +344,48 @@
         }
 
         function clearApiKeys() {
-            localStorage.removeItem('geminiAnkiApiKeys');
+            const provider = getSelectedProvider();
+            const keyStore = loadProviderKeyStore();
+            delete keyStore[provider];
+            saveProviderKeyStore(keyStore);
+
+            if (provider === 'gemini') {
+                localStorage.removeItem('geminiAnkiApiKeys');
+            }
+
             apiKeysTextarea.value = '';
             checkReady();
             alert('API Keys cleared from browser storage.');
         }
 
         function loadApiKeys() {
-            const savedKeys = localStorage.getItem('geminiAnkiApiKeys');
+            const provider = getSelectedProvider();
+            const keyStore = loadProviderKeyStore();
+            let savedKeys = keyStore[provider];
+
+            // Backwards compatibility with old Gemini key storage.
+            if (!savedKeys && provider === 'gemini') {
+                savedKeys = localStorage.getItem('geminiAnkiApiKeys');
+            }
+
+            apiKeysTextarea.value = '';
             if (savedKeys) {
                 apiKeysTextarea.value = savedKeys;
-                checkReady();
             }
+            checkReady();
         }
 
         // --- Options Storage Functions ---
         function saveOptions() {
+            const provider = getSelectedProvider();
+            modelSelectionsByProvider[provider].topic = topicModelSelect.value;
+            modelSelectionsByProvider[provider].explanation = explanationModelSelect.value;
+
             localStorage.setItem('geminiAnkiTopicOptions', JSON.stringify({
+                aiProvider: provider,
                 topicModel: topicModelSelect.value,
                 explanationModel: explanationModelSelect.value,
+                modelSelectionsByProvider: modelSelectionsByProvider,
                 maxParallel: maxParallelInput.value
             }));
         }
@@ -249,13 +395,35 @@
             if (savedOptions) {
                 try {
                     const options = JSON.parse(savedOptions);
-                    if (options.topicModel) topicModelSelect.value = options.topicModel;
-                    if (options.explanationModel) explanationModelSelect.value = options.explanationModel;
                     if (options.maxParallel) maxParallelInput.value = options.maxParallel;
+
+                    if (options.modelSelectionsByProvider && typeof options.modelSelectionsByProvider === 'object') {
+                        modelSelectionsByProvider = {
+                            gemini: {
+                                ...modelSelectionsByProvider.gemini,
+                                ...(options.modelSelectionsByProvider.gemini || {})
+                            },
+                            nvidia: {
+                                ...modelSelectionsByProvider.nvidia,
+                                ...(options.modelSelectionsByProvider.nvidia || {})
+                            }
+                        };
+                    } else {
+                        if (options.topicModel) modelSelectionsByProvider.gemini.topic = options.topicModel;
+                        if (options.explanationModel) modelSelectionsByProvider.gemini.explanation = options.explanationModel;
+                    }
+
+                    if (options.aiProvider === 'nvidia' || options.aiProvider === 'gemini') {
+                        aiProviderSelect.value = options.aiProvider;
+                    }
+
+                    syncProviderUi();
                 } catch (e) {
                     console.error("Failed to load saved options:", e);
                     localStorage.removeItem('geminiAnkiTopicOptions'); // Clear corrupted data
                 }
+            } else {
+                syncProviderUi();
             }
         }
         
@@ -291,7 +459,7 @@
             updateProgress("Starting...", 0);
 
             if (!pdfFile || !apiKeysTextarea.value.trim()) {
-                showError("Please provide both a PDF file and at least one Gemini API Key.");
+                showError("Please provide both a PDF file and at least one API key.");
                 return;
             }
 
@@ -400,12 +568,14 @@
         }
 
         // --- Universal API caller with retry logic ---
-        // This is copied from your reference file and is very robust.
-        async function callGeminiWithRetry(prompt, generationConfig = null, model = 'gemini-2.5-flash-lite', fileBytesBase64 = null) {
+        async function callGeminiWithRetry(prompt, generationConfig = null, model = null, fileBytesBase64 = null) {
             if (!keyPool || keyPool.length === 0) {
                 throw new Error("API Key pool is empty.");
             }
 
+            const provider = getSelectedProvider();
+            const providerName = getProviderName(provider);
+            const selectedModel = model || modelSelectionsByProvider[provider].explanation || PROVIDER_DEFAULT_MODELS[provider].explanation;
             let retryCount = 0;
 
             while (true) {
@@ -434,75 +604,128 @@
                 }
 
                 const apiKey = keyEntry.key;
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+                let url = '';
+                let body = {};
+                const headers = { 'Content-Type': 'application/json' };
 
-                const parts = [{ text: prompt }];
-                if (fileBytesBase64) {
-                    parts.push({
-                        inlineData: {
-                            mimeType: 'application/pdf',
-                            data: fileBytesBase64
-                        }
-                    });
-                }
-                
-                const body = {
-                    contents: [{ parts: parts }]
-                };
+                if (provider === 'gemini') {
+                    url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey}`;
 
-                if (generationConfig) {
-                    body.generationConfig = generationConfig;
+                    const parts = [{ text: prompt }];
+                    if (fileBytesBase64) {
+                        parts.push({
+                            inlineData: {
+                                mimeType: 'application/pdf',
+                                data: fileBytesBase64
+                            }
+                        });
+                    }
+
+                    body = {
+                        contents: [{ parts: parts }]
+                    };
+
+                    if (generationConfig) {
+                        body.generationConfig = generationConfig;
+                    }
+                } else {
+                    if (fileBytesBase64) {
+                        throw new Error("NVIDIA API mode currently supports text-only requests in this tool.");
+                    }
+
+                    url = 'https://integrate.api.nvidia.com/v1/chat/completions';
+                    headers.Authorization = `Bearer ${apiKey}`;
+                    body = {
+                        model: selectedModel,
+                        messages: [{ role: 'user', content: prompt }],
+                        temperature: 0.2
+                    };
                 }
 
                 try {
                     const response = await fetch(url, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers,
                         body: JSON.stringify(body)
                     });
 
                     if (response.ok) {
                         const data = await response.json();
-                        if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts[0]) {
-                            return data.candidates[0].content.parts[0].text; // SUCCESS!
-                        } else {
+
+                        if (provider === 'gemini') {
+                            if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts[0]) {
+                                return data.candidates[0].content.parts[0].text;
+                            }
                             throw new Error("Invalid successful response structure from Gemini.");
+                        }
+
+                        const nvidiaText = data?.choices?.[0]?.message?.content;
+                        if (typeof nvidiaText === 'string' && nvidiaText.trim()) {
+                            return nvidiaText;
+                        }
+                        if (Array.isArray(nvidiaText)) {
+                            return nvidiaText.map(part => typeof part === 'string' ? part : part?.text || '').join('\n').trim();
+                        }
+                        throw new Error("Invalid successful response structure from NVIDIA.");
+                    }
+
+                    const rawError = await response.text();
+                    let errorMessage = rawError || "Unknown API error";
+                    try {
+                        const parsedError = JSON.parse(rawError);
+                        errorMessage = parsedError.error?.message
+                            || parsedError.message
+                            || parsedError.detail
+                            || errorMessage;
+                    } catch (_) {
+                        // Keep raw response text as the error message.
+                    }
+
+                    const retryAfterHeader = response.headers.get('retry-after');
+                    let waitTimeS = null;
+                    if (retryAfterHeader && !isNaN(Number(retryAfterHeader))) {
+                        waitTimeS = Number(retryAfterHeader);
+                    } else {
+                        const match = errorMessage.match(/retry in ([\d.]+)s/i);
+                        if (match && match[1]) {
+                            waitTimeS = parseFloat(match[1]);
                         }
                     }
 
-                    const errorBody = await response.json();
-                    const errorMessage = errorBody.error ? errorBody.error.message : "Unknown API error";
-
-                    if (response.status === 503 || errorMessage.includes("model is overloaded")) {
+                    if (response.status === 503 || /overloaded|temporarily unavailable/i.test(errorMessage)) {
                         const waitMs = 15000;
                         keyEntry.availableAt = Date.now() + waitMs;
-                        console.warn(`Model is overloaded for key ...${apiKey.slice(-4)}. Retrying after ${waitMs / 1000}s.`);
+                        console.warn(`${providerName} model overloaded for key ...${apiKey.slice(-4)}. Retrying after ${waitMs / 1000}s.`);
                         updateProgress(`Model overloaded (Key: ...${apiKey.slice(-4)}). Trying next key... (Retry #${retryCount})`, currentPercentage);
-                        await sleep(500); 
+                        await sleep(500);
                         updateProgress(currentProgressMessage, currentPercentage);
                         retryCount++;
                         continue;
                     }
 
-                    if (errorMessage.includes("Quota exceeded") && errorMessage.includes("Please retry in")) {
-                        const match = errorMessage.match(/Please retry in ([\d\.]+)s/);
-                        if (match && match[1]) {
-                            const waitTimeS = parseFloat(match[1]);
-                            if (waitTimeS > 300) {
-                                throw new Error(`Rate limit retry time (${waitTimeS.toFixed(1)}s) for key ...${apiKey.slice(-4)} exceeds 5 minutes. Aborting.`);
-                            }
-                            const waitMs = (waitTimeS * 1000) + 1000;
-                            keyEntry.availableAt = Date.now() + waitMs; 
-                            console.warn(`Gemini rate limit hit for key ...${apiKey.slice(-4)}. Setting cool-down for ${waitTimeS.toFixed(1)}s.`);
-                            updateProgress(`Key ...${apiKey.slice(-4)} rate-limited. Trying next key... (Retry #${retryCount})`, currentPercentage);
-                            await sleep(500);
-                            updateProgress(currentProgressMessage, currentPercentage);
-                            retryCount++;
-                            continue;
+                    const isRateLimit = response.status === 429
+                        || /quota exceeded|rate limit|too many requests/i.test(errorMessage);
+
+                    if (isRateLimit && waitTimeS === null) {
+                        waitTimeS = 30;
+                    }
+
+                    if (isRateLimit && waitTimeS !== null) {
+                        if (waitTimeS > 300) {
+                            throw new Error(`Rate limit retry time (${waitTimeS.toFixed(1)}s) for key ...${apiKey.slice(-4)} exceeds 5 minutes. Aborting.`);
                         }
+
+                        const waitMs = (waitTimeS * 1000) + 1000;
+                        keyEntry.availableAt = Date.now() + waitMs;
+                        console.warn(`${providerName} rate limit hit for key ...${apiKey.slice(-4)}. Setting cool-down for ${waitTimeS.toFixed(1)}s.`);
+                        updateProgress(`Key ...${apiKey.slice(-4)} rate-limited. Trying next key... (Retry #${retryCount})`, currentPercentage);
+                        await sleep(500);
+                        updateProgress(currentProgressMessage, currentPercentage);
+                        retryCount++;
+                        continue;
                     }
                     
-                    if (response.status === 400 || response.status === 403) {
+                    if (response.status === 400 || response.status === 401 || response.status === 403) {
                          keyEntry.availableAt = Date.now() + 86400000; // Disable for 24h
                          console.error(`API Key ...${apiKey.slice(-4)} is invalid or unauthorized. Disabling it for 24h.`);
                          updateProgress(`Key ...${apiKey.slice(-4)} is invalid. Trying next... (Retry #${retryCount})`, currentPercentage);
@@ -512,9 +735,13 @@
                          continue;
                     }
 
-                    throw new Error(`Gemini API error (Key: ...${apiKey.slice(-4)}): ${errorMessage}`);
+                    throw new Error(`${providerName} API error (Key: ...${apiKey.slice(-4)}): ${errorMessage}`);
 
                 } catch (error) {
+                    if (error instanceof Error && error.message.includes('text-only requests')) {
+                        throw error;
+                    }
+
                     console.error(`Network or fetch error (Key: ...${apiKey.slice(-4)}):`, error);
                     keyEntry.availableAt = Date.now() + 30000;
                     console.warn(`Pausing key ...${apiKey.slice(-4)} for 30s due to network error.`);
