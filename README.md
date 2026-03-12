@@ -57,6 +57,29 @@ Convert JSON, PDF, or text content into Anki flashcards - now with AI support!
 - No server uploads - your files remain private
 - Modern, easy-to-use interfaces
 
+## Local Development & Testing
+
+Since these tools process files in the browser, opening the `.html` files directly via `file://` might cause issues with some browser security policies (CORS). It is recommended to use a local static file server for testing.
+
+### Start a Local Server
+
+You can start a local server in the project root using any of the following methods:
+
+**Option 1: Python (Built-in)**
+```bash
+python3 -m http.server 8000
+```
+Then visit: `http://localhost:8000`
+
+**Option 2: Node.js (npx)**
+```bash
+npx serve .
+```
+Then visit: `http://localhost:3000`
+
+**Option 3: VS Code (Live Server)**
+If you use VS Code, you can install the **Live Server** extension and click "Go Live" at the bottom of the editor.
+
 ## Privacy
 All processing happens directly in your browser. Your files are never uploaded to any server, ensuring complete privacy and data security.
 
