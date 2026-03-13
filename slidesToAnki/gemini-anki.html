@@ -34,8 +34,12 @@
                 </div>
                 <div id="cors-proxy-container">
                     <label for="cors-proxy-input">CORS Proxy URL</label>
-                    <input type="text" id="cors-proxy-input" value="https://corsproxy.io/?" placeholder="e.g. https://corsproxy.io/?">
-                    <span class="badge-info">Required for NVIDIA unless using a browser extension.</span>
+                    <input type="text" id="cors-proxy-input" value="https://corsproxy.io/?url=" placeholder="e.g. https://corsproxy.io/?url=">
+                    <div class="badge-info" style="margin-top: 8px;">
+                        <b>Pro Tip:</b> For NVIDIA, use a browser extension like <b>"CORS Unblock"</b> for the best experience.
+                        <br>
+                        <small>If using a proxy, ensure it supports the <code>Authorization</code> header.</small>
+                    </div>
                 </div>
                 <div style="grid-column: 1 / -1;">
                     <label for="api-keys-textarea">API Keys (one per line)</label>
@@ -876,6 +880,7 @@
                 }
 
                 try {
+                    console.log(`[API Call] Requesting URL: ${url}`);
                     const response = await fetch(url, {
                         method: 'POST',
                         headers,
@@ -985,6 +990,17 @@
                     }
 
                     console.error(`Network or fetch error (Key: ...${apiKey.slice(-4)}):`, error);
+                    
+                    // Specific handling for CORS/Proxy failures
+                    if (error.name === 'TypeError' && error.message === 'Failed to fetch' && provider === 'nvidia') {
+                        const proxyUrl = document.getElementById('cors-proxy-input').value.trim();
+                        if (proxyUrl) {
+                            throw new Error(`NVIDIA API call failed (CORS/Proxy error). The current proxy (${proxyUrl}) might be blocking the 'Authorization' header. Try a different proxy or use the "CORS Unblock" browser extension for a direct connection.`);
+                        } else {
+                            throw new Error(`NVIDIA API call failed (CORS error). Please use a CORS proxy or a browser extension like "CORS Unblock" to allow cross-origin requests.`);
+                        }
+                    }
+
                     keyEntry.availableAt = Date.now() + 30000;
                     console.warn(`Pausing key ...${apiKey.slice(-4)} for 30s due to network error.`);
                     retryCount++;
