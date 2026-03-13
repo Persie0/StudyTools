@@ -33,12 +33,11 @@
                     </select>
                 </div>
                 <div id="cors-proxy-container">
-                    <label for="cors-proxy-input">CORS Proxy URL</label>
+                    <label for="cors-proxy-input">CORS Proxy URL (e.g. for NVIDIA)</label>
                     <input type="text" id="cors-proxy-input" value="https://corsproxy.io/?url=" placeholder="e.g. https://corsproxy.io/?url=">
-                    <div class="badge-info" style="margin-top: 8px;">
-                        <b>Pro Tip:</b> For NVIDIA, use a browser extension like <b>"CORS Unblock"</b> for the best experience.
-                        <br>
-                        <small>If using a proxy, ensure it supports the <code>Authorization</code> header.</small>
+                    <div class="badge-info" style="margin-top: 8px; border-left: 4px solid #f59e0b;">
+                        <b>Fixing CORS:</b> If NVIDIA calls fail, use the <b>"CORS Unblock"</b> extension. 
+                        Most proxies block the <code>Authorization</code> header required by NVIDIA.
                     </div>
                 </div>
                 <div style="grid-column: 1 / -1;">
@@ -1053,20 +1052,20 @@
                                 The page numbers should be 1-based (e.g., the first page is 1).
                 
                                 - **Language:** Your response (especially the "title" fields) **must** be in the primary language detected from the input (e.g., if the text is in German, the titles must be in German).
-
-                                [
-                                    {
-                                        "title": "A descriptive title for this section",
-                                        "pages": [/* array of page numbers (integers) in this group */]
-                                    },
-                                    {
-                                        "title": "Title for the next section",
-                                        "pages": [/* ... */]
-                                    }
-                                ]
+                                 [
+                                      {
+                                          "title": "A descriptive title for this section",
+                                          "pages": [1, 2, 3]
+                                      },
+                                      {
+                                          "title": "Title for the next section",
+                                          "pages": [4, 5]
+                                      }
+                                  ]
                 
-                                Analyze the attached PDF file and return the JSON.
-                                `;
+                                  IMPORTANT: Every object in the array MUST start with an opening brace '{' and end with a closing brace '}'.
+                                  Return ONLY the JSON. No conversational filler.
+                                  `;
                                 filePayload = pdfDataB64;
                         } else {
                                 prompt = `
@@ -1145,9 +1144,39 @@
             try {
                 return JSON.parse(jsonString);
             } catch (e) {
-                console.error("Failed to parse cleaned JSON string:", jsonString);
-                throw new Error(`AI returned malformed JSON after cleaning: ${e.message}`);
+                console.warn("Standard JSON parse failed, attempting repair...", e);
+                try {
+                    const repairedJson = repairJson(jsonString);
+                    return JSON.parse(repairedJson);
+                } catch (repairError) {
+                    console.error("JSON repair also failed:", jsonString);
+                    throw new Error(`AI returned malformed JSON: ${e.message}. Attempted repair also failed.`);
+                }
             }
+        }
+
+        /**
+         * Attempts to repair common JSON malformations from AI responses.
+         */
+        function repairJson(s) {
+            let fixed = s.trim();
+            
+            // Fix 1: Missing opening brace in array of objects: [ {..}, "key":.. } ]
+            // This regex looks for a comma followed by a key:value pair that doesn't start with a brace.
+            // It's specific to our "title"/"pages" structure to avoid false positives.
+            fixed = fixed.replace(/,\s*("title"\s*:)/g, ', { $1');
+            
+            // Fix 2: Missing opening brace at the very start of the array: [ "title":.. } ]
+            fixed = fixed.replace(/\[\s*("title"\s*:)/g, '[ { $1');
+            
+            // Fix 3: Handle potentially missing closing braces before commas (less common but possible)
+            // If we find "pages": [...] followed by a comma and then "title", we might be missing a }
+            // But usually the AI provides the closing brace and misses the opening one.
+            
+            // Fix 4: Remove trailing commas in arrays/objects which JSON.parse hates
+            fixed = fixed.replace(/,\s*([\]}])/g, '$1');
+
+            return fixed;
         }
 
         /**
