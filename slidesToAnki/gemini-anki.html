@@ -58,7 +58,7 @@
             <div id="drop-area">
                 <form class="my-form">
                     <p style="margin-bottom: 16px; color: var(--text-light);">Drag & drop your PDF or click the button below</p>
-                    <input type="file" id="file-input" accept="application/pdf" style="display: none;">
+                    <input type="file" id="file-input" accept="application/pdf" style="display: none;" multiple>
                     <label for="file-input" class="button" style="cursor: pointer;">Choose PDF File</label>
                 </form>
             </div>
@@ -241,7 +241,7 @@
         const API_KEYS_STORAGE_KEY = 'geminiAnkiApiKeysByProvider';
 
         // --- State ---
-        let pdfFile = null;
+        let pdfFiles = [];
         let keyPool = [];
         let groupingModelByProvider = { ...PROVIDER_DEFAULT_MODEL };
 
@@ -301,33 +301,50 @@
             }
 
             if (files && files.length > 0) {
-                pdfFile = files[0];
+                // Convert FileList to Array and filter for PDFs
+                const newFiles = Array.from(files).filter(f => f.type === 'application/pdf');
+                
+                // Add new files to the list if they aren't already there (by name/size)
+                newFiles.forEach(newFile => {
+                    const exists = pdfFiles.some(f => f.name === newFile.name && f.size === newFile.size);
+                    if (!exists) {
+                        pdfFiles.push(newFile);
+                    }
+                });
+
                 updateFileList();
                 checkReady();
             }
         }
         function updateFileList() {
-            fileList.innerHTML = '<h3>Selected File:</h3>';
-            if (pdfFile) {
-                const div = document.createElement('div');
-                div.className = 'file-item';
-                div.innerHTML = `
-                    <span>${pdfFile.name}</span>
-                    <span class"remove-file" style="cursor: pointer; color: red;" onclick="clearFile()">&#10005;</span>
-                `;
-                fileList.appendChild(div);
+            fileList.innerHTML = '<h3>Selected Files:</h3>';
+            if (pdfFiles.length > 0) {
+                pdfFiles.forEach((file, index) => {
+                    const div = document.createElement('div');
+                    div.className = 'file-item';
+                    div.style.marginBottom = '8px';
+                    div.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px;">
+                            <span style="font-weight: 500;">${file.name}</span>
+                            <span class="remove-file" style="cursor: pointer; color: #ef4444; font-size: 1.2rem; padding: 0 4px;" onclick="removeFile(${index})">&#10005;</span>
+                        </div>
+                    `;
+                    fileList.appendChild(div);
+                });
+            } else {
+                fileList.innerHTML = '<p style="color: var(--text-light); font-style: italic;">No files selected</p>';
             }
         }
 
-        function clearFile() {
-            pdfFile = null;
-            fileList.innerHTML = '';
-            fileInput.value = '';
+        function removeFile(index) {
+            pdfFiles.splice(index, 1);
+            updateFileList();
+            fileInput.value = ''; // Reset input to allow re-selecting same file
             checkReady();
         }
 
         function checkReady() {
-            generateButton.disabled = !(pdfFile && apiKeysTextarea.value.trim() !== '');
+            generateButton.disabled = !(pdfFiles.length > 0 && apiKeysTextarea.value.trim() !== '');
         }
 
         function getSelectedProvider() {
@@ -639,8 +656,8 @@
             downloadArea.innerHTML = '';
             updateProgress("Starting...", 0);
 
-            if (!pdfFile || !apiKeysTextarea.value.trim()) {
-                showError("Please provide both a PDF file and at least one API key.");
+            if (pdfFiles.length === 0 || !apiKeysTextarea.value.trim()) {
+                showError("Please provide at least one PDF file and at least one API key.");
                 return;
             }
 
@@ -655,6 +672,36 @@
                 return;
             }
 
+            try {
+                const totalFiles = pdfFiles.length;
+                for (let i = 0; i < totalFiles; i++) {
+                    const currentFile = pdfFiles[i];
+                    const filePrefix = totalFiles > 1 ? `[File ${i + 1}/${totalFiles}] ${currentFile.name}: ` : "";
+                    
+                    updateProgress(`${filePrefix}Initialising...`, (i / totalFiles) * 100);
+                    
+                    try {
+                        await processSingleFile(currentFile, filePrefix, i, totalFiles);
+                    } catch (error) {
+                        console.error(`Error processing file ${currentFile.name}:`, error);
+                        showError(`${filePrefix} Failed: ${error.message}`);
+                        // Continue to next file? Let's stop on error for now to be safe, but the user might want "skip and continue".
+                        // For now, let's stop.
+                        return;
+                    }
+                }
+
+                updateProgress("All files processed successfully!", 100);
+
+            } catch (error) {
+                showError(`A critical error occurred: ${error.message}`);
+                console.error(error);
+            } finally {
+                generateButton.disabled = false;
+            }
+        }
+
+        async function processSingleFile(currentPdfFile, filePrefix, fileIndex, totalFiles) {
             let pdfDoc;
 
             // Get options
@@ -668,47 +715,37 @@
 
             if (groupingInput === 'file' && !supportsPdf) {
                 groupingInput = 'text';
-                groupingInputText.checked = true;
-                groupingInputFile.checked = false;
-                saveOptions();
-                console.warn(`Selected model ${groupingModel} does not support PDF upload. Switching to text.`);
+                // Note: We don't update the UI check here since we are mid-process, but we log it.
+                console.warn(`Selected model ${groupingModel} does not support PDF upload for ${currentPdfFile.name}. Switching to text.`);
             }
 
-            try {
-                updateProgress("Loading PDF...", 5);
-                pdfDoc = await pdfjsLib.getDocument(URL.createObjectURL(pdfFile)).promise;
+            const baseProgress = (fileIndex / totalFiles) * 100;
+            const nextBaseProgress = ((fileIndex + 1) / totalFiles) * 100;
+            const progressStep = (percent) => baseProgress + (percent / 100) * (nextBaseProgress - baseProgress);
 
-                let allPagesText = null;
-                let pdfDataB64 = null;
+            updateProgress(`${filePrefix}Loading PDF...`, progressStep(5));
+            pdfDoc = await pdfjsLib.getDocument(URL.createObjectURL(currentPdfFile)).promise;
 
-                if (groupingInput === 'file') {
-                    updateProgress("Reading PDF for upload...", 15);
-                    pdfDataB64 = await fileToBase64(pdfFile);
-                } else {
-                    updateProgress("Extracting text from all pages...", 10);
-                    allPagesText = await extractAllText(pdfDoc);
-                }
+            let allPagesText = null;
+            let pdfDataB64 = null;
 
-                updateProgress("Asking AI to group and filter slides...", 20);
-                const groupingJSON = await callGeminiForGrouping(allPagesText, groupingModel, groupingInput, pdfDataB64);
-
-                if (!groupingJSON || !Array.isArray(groupingJSON)) {
-                    showError("AI did not return valid JSON for grouping. Check console for details.");
-                    console.error("Invalid JSON response:", groupingJSON);
-                    return;
-                }
-
-                updateProgress("AI grouping received. Starting deck generation...", 30);
-                await createDeckFromConfig(pdfDoc, groupingJSON);
-
-                updateProgress("Anki deck generated!", 100);
-
-            } catch (error) {
-                showError(`An error occurred: ${error.message}`);
-                console.error(error);
-            } finally {
-                generateButton.disabled = false;
+            if (groupingInput === 'file') {
+                updateProgress(`${filePrefix}Reading PDF for upload...`, progressStep(15));
+                pdfDataB64 = await fileToBase64(currentPdfFile);
+            } else {
+                updateProgress(`${filePrefix}Extracting text from all pages...`, progressStep(10));
+                allPagesText = await extractAllText(pdfDoc);
             }
+
+            updateProgress(`${filePrefix}Asking AI to group and filter slides...`, progressStep(20));
+            const groupingJSON = await callGeminiForGrouping(allPagesText, groupingModel, groupingInput, pdfDataB64);
+
+            if (!groupingJSON || !Array.isArray(groupingJSON)) {
+                throw new Error("AI did not return valid JSON for grouping.");
+            }
+
+            updateProgress(`${filePrefix}AI grouping received. Starting deck generation...`, progressStep(30));
+            await createDeckFromConfig(pdfDoc, groupingJSON, currentPdfFile, filePrefix, progressStep);
         }
 
         /**
@@ -1168,7 +1205,7 @@
         /**
          * Creates the .apkg file based on the AI's grouping.
          */
-        async function createDeckFromConfig(pdfDoc, jsonConfig) {
+        async function createDeckFromConfig(pdfDoc, jsonConfig, currentPdfFile, filePrefix = "", progressStep = (p) => p) {
             // --- Model and Deck Setup ---
             const m = new Model({
                 name: "AI Slides - " + Date.now(),
@@ -1207,14 +1244,14 @@
                 `,
             });
 
-            const deckName = pdfFile.name.replace(/\.[^/.]+$/, "");
+            const deckName = currentPdfFile.name.replace(/\.[^/.]+$/, "");
             const d = new Deck(Date.now(), deckName);
             const baseTimestamp = new Date().getTime();
 
             // --- Concurrency Limit Logic ---
             const totalSections = jsonConfig.length;
             const maxParallelThreads = parseInt(maxParallelInput.value) || 10;
-            updateProgress(`Processing ${totalSections} sections (in parallel batches of ${maxParallelThreads})...`, 30);
+            updateProgress(`${filePrefix}Processing ${totalSections} sections...`, progressStep(30));
             
             const results = new Array(totalSections).fill(null);
             let completedCount = 0;
@@ -1230,7 +1267,7 @@
                 
                 completedCount++;
                 const progressPercent = 30 + (completedCount / totalSections) * 65;
-                updateProgress(`Processing section ${completedCount} of ${totalSections}...`, progressPercent);
+                updateProgress(`${filePrefix}Processing section ${completedCount} of ${totalSections}...`, progressStep(progressPercent));
             };
 
             const pool = new Set();
@@ -1271,10 +1308,10 @@
             
             if (failedSections > 0) {
                 const successfulCards = allNotes.length;
-                showError(`Warning: ${failedSections} card(s) failed to generate. ${successfulCards} card(s) were created successfully. Check console for details.`);
+                console.warn(`${filePrefix} ${failedSections} card(s) failed to generate. ${successfulCards} card(s) were created successfully.`);
             }
 
-            updateProgress("Creating .apkg file...", 95);
+            updateProgress(`${filePrefix}Creating .apkg file...`, progressStep(95));
             const p = new Package();
             p.addDeck(d);
             const apkgArrayBuffer = await p.writeToFile(`${deckName}.apkg`);
