@@ -170,10 +170,16 @@
 
         <div class="api-key-section" id="api-key-section">
             <label for="ai-provider-select"><strong>AI Provider:</strong></label>
-            <select id="ai-provider-select" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem; border: 1px solid #ccc; border-radius: 5px; font-size: 1rem;">
+                        <select id="ai-provider-select" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem; border: 1px solid #ccc; border-radius: 5px; font-size: 1rem;">
                 <option value="gemini" selected>Google Gemini</option>
                 <option value="nvidia">NVIDIA NIM</option>
+                <option value="openrouter">OpenRouter</option>
             </select>
+            <div id="custom-model-container" style="display: none; margin-bottom: 1rem;">
+                <label for="custom-model-input"><strong>Custom Model ID:</strong></label>
+                <input type="text" id="custom-model-input" placeholder="e.g. anthropic/claude-3-opus:beta" style="margin-bottom: 0;">
+                <small style="color: #666; display: block; margin-top: 4px;">Leave blank to use default (Claude 3.7 Sonnet).</small>
+            </div>
             <label for="api-key-input"><strong>AI API Key:</strong></label>
             <input type="text" id="api-key-input" placeholder="Enter your API key">
             <div class="button-group">
@@ -258,6 +264,8 @@
         const apiKeySection = document.getElementById('api-key-section');
         const pdfFileName = document.getElementById('pdf-file-name');
         const aiProviderSelect = document.getElementById('ai-provider-select');
+        const customModelContainer = document.getElementById('custom-model-container');
+        const customModelInput = document.getElementById('custom-model-input');
         const apiKeyHelpLink = document.getElementById('api-key-help-link');
 
         // Constants
@@ -266,7 +274,8 @@
         const AI_PROVIDER_STORAGE_KEY = 'jsonToAnkiAiProvider';
         const DEFAULT_MODELS = {
             gemini: 'gemini-2.0-flash-exp',
-            nvidia: 'meta/llama-3.3-70b-instruct'
+            nvidia: 'meta/llama-3.3-70b-instruct',
+            openrouter: 'anthropic/claude-3.7-sonnet'
         };
 
         // State
@@ -288,7 +297,7 @@
         });
 
         function getSelectedProvider() {
-            return aiProviderSelect.value === 'nvidia' ? 'nvidia' : 'gemini';
+            return aiProviderSelect.value;
         }
 
         function loadProviderKeyStore() {
@@ -312,16 +321,18 @@
             localStorage.setItem(API_KEYS_STORAGE_KEY, JSON.stringify(keyStore));
         }
 
-        function updateProviderUi() {
+                function updateProviderUi() {
             const provider = getSelectedProvider();
             const isNvidia = provider === 'nvidia';
+            const isOpenRouter = provider === 'openrouter';
 
-            apiKeyHelpLink.href = isNvidia
-                ? 'https://build.nvidia.com/'
-                : 'https://aistudio.google.com/app/apikey';
-            apiKeyHelpLink.textContent = isNvidia
-                ? 'Get your NVIDIA API key here'
-                : 'Get your Gemini API key here';
+            apiKeyHelpLink.href = isOpenRouter ? 'https://openrouter.ai/keys' : (isNvidia ? 'https://build.nvidia.com/' : 'https://aistudio.google.com/app/apikey');
+            apiKeyHelpLink.textContent = isOpenRouter ? 'Get your OpenRouter API key here' : (isNvidia ? 'Get your NVIDIA API key here' : 'Get your Gemini API key here');
+            if (isOpenRouter) {
+                customModelContainer.style.display = 'block';
+            } else {
+                customModelContainer.style.display = 'none';
+            }
         }
 
         function loadApiKeyForCurrentProvider() {
@@ -492,7 +503,7 @@
             const provider = getSelectedProvider();
             const apiKey = apiKeyInput.value.trim();
             if (!apiKey) {
-                alert(`Please enter your ${provider === 'nvidia' ? 'NVIDIA' : 'Gemini'} API key`);
+                alert(`Please enter your ${provider === 'openrouter' ? 'OpenRouter' : (provider === 'nvidia' ? 'NVIDIA' : 'Gemini')} API key`);
                 return null;
             }
 
@@ -537,15 +548,26 @@ ${sanitizedContent}`;
                             }]
                         })
                     });
-                } else {
-                    response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+                                } else if (provider === 'nvidia' || provider === 'openrouter') {
+                    let baseUrl;
+                    let headers = {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    };
+
+                    if (provider === 'openrouter') {
+                        baseUrl = 'https://openrouter.ai/api/v1/chat/completions';
+                        headers['HTTP-Referer'] = window.location.href;
+                        headers['X-Title'] = 'Study Tools';
+                    } else {
+                        baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
+                    }
+
+                    response = await fetch(baseUrl, {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${apiKey}`
-                        },
+                        headers: headers,
                         body: JSON.stringify({
-                            model: DEFAULT_MODELS.nvidia,
+                            model: (provider === 'openrouter' && customModelInput && customModelInput.value.trim()) ? customModelInput.value.trim() : DEFAULT_MODELS[provider],
                             messages: [{ role: 'user', content: prompt }],
                             temperature: 0.2
                         })
@@ -565,16 +587,16 @@ ${sanitizedContent}`;
                         throw new Error('Invalid response from Gemini API');
                     }
                     textResponse = data.candidates[0].content.parts[0].text;
-                } else {
-                    const nvidiaContent = data?.choices?.[0]?.message?.content;
-                    if (typeof nvidiaContent === 'string') {
-                        textResponse = nvidiaContent;
-                    } else if (Array.isArray(nvidiaContent)) {
-                        textResponse = nvidiaContent
+                                } else {
+                    const contentResult = data?.choices?.[0]?.message?.content;
+                    if (typeof contentResult === 'string') {
+                        textResponse = contentResult;
+                    } else if (Array.isArray(contentResult)) {
+                        textResponse = contentResult
                             .map(part => typeof part === 'string' ? part : part?.text || '')
                             .join('\n');
                     } else {
-                        throw new Error('Invalid response from NVIDIA API');
+                        throw new Error(`Invalid response from ${provider === 'openrouter' ? 'OpenRouter' : 'NVIDIA'} API`);
                     }
                 }
 

@@ -46,6 +46,7 @@
                 <select id="ai-provider-select">
                     <option value="gemini" selected>Google Gemini</option>
                     <option value="nvidia">NVIDIA NIM</option>
+                    <option value="openrouter">OpenRouter</option>
                 </select>
             </div>
             <label for="api-keys-textarea">AI API Keys (one per line):</label>
@@ -71,13 +72,19 @@
         <div class="options-section">
             <h3>Options</h3>
             <div class="options-grid">
-                <div style="grid-column: 1 / -1;">
+                                <div style="grid-column: 1 / -1;">
                     <label for="topic-model-select"><b>Topic AI Model:</b> (For finding topics)</label>
                     <select id="topic-model-select"></select>
+                    <div id="custom-topic-model-container" style="display: none; margin-top: 5px;">
+                        <input type="text" id="custom-topic-model-input" placeholder="e.g. anthropic/claude-3-opus:beta" style="width: 100%; padding: 6px;">
+                    </div>
                 </div>
                 <div style="grid-column: 1 / -1;">
                     <label for="explanation-model-select"><b>Explanation AI Model:</b> (For explaining topics)</label>
                     <select id="explanation-model-select"></select>
+                    <div id="custom-explanation-model-container" style="display: none; margin-top: 5px;">
+                        <input type="text" id="custom-explanation-model-input" placeholder="e.g. anthropic/claude-3-opus:beta" style="width: 100%; padding: 6px;">
+                    </div>
                 </div>
                 <div style="grid-column: 1 / -1; border-top: 1px solid #eee; padding-top: 15px; margin-top: 10px;">
                     <label for="max-parallel-input">Max parallel tasks:</label>
@@ -130,6 +137,10 @@
         // --- Options ---
         const topicModelSelect = document.getElementById('topic-model-select');
         const explanationModelSelect = document.getElementById('explanation-model-select');
+        const customTopicModelContainer = document.getElementById('custom-topic-model-container');
+        const customTopicModelInput = document.getElementById('custom-topic-model-input');
+        const customExplanationModelContainer = document.getElementById('custom-explanation-model-container');
+        const customExplanationModelInput = document.getElementById('custom-explanation-model-input');
         const maxParallelInput = document.getElementById('max-parallel-input');
 
         const PROVIDER_DEFAULT_MODELS = {
@@ -140,6 +151,10 @@
             nvidia: {
                 topic: 'meta/llama-3.3-70b-instruct',
                 explanation: 'meta/llama-3.3-70b-instruct'
+            },
+            openrouter: {
+                topic: 'anthropic/claude-3.7-sonnet',
+                explanation: 'anthropic/claude-3.5-haiku'
             }
         };
 
@@ -153,6 +168,18 @@
                 { value: 'meta/llama-3.3-70b-instruct', label: 'Llama 3.3 70B Instruct (Balanced)' },
                 { value: 'nvidia/llama-3.1-nemotron-70b-instruct', label: 'Nemotron 70B Instruct (Reasoning)' },
                 { value: 'mistralai/mixtral-8x7b-instruct-v0.1', label: 'Mixtral 8x7B Instruct (Fast)' }
+            ]
+       ,
+            openrouter: [
+                { value: 'anthropic/claude-3.7-sonnet', label: 'Claude 3.7 Sonnet (Recommended)' },
+                { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
+                { value: 'anthropic/claude-3.5-haiku', label: 'Claude 3.5 Haiku (Fast)' },
+                { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+                { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+                { value: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B Instruct' },
+                { value: 'openai/o3-mini', label: 'o3-mini' },
+                { value: 'deepseek/deepseek-chat', label: 'DeepSeek V3' },
+                { value: 'custom', label: 'Custom Model...' }
             ]
         };
 
@@ -245,11 +272,13 @@
         }
 
         function getSelectedProvider() {
-            return aiProviderSelect.value === 'nvidia' ? 'nvidia' : 'gemini';
+            return aiProviderSelect.value;
         }
 
         function getProviderName(provider = getSelectedProvider()) {
-            return provider === 'nvidia' ? 'NVIDIA' : 'Gemini';
+            if (provider === 'nvidia') return 'NVIDIA';
+            if (provider === 'openrouter') return 'OpenRouter';
+            return 'Gemini';
         }
 
         function loadProviderKeyStore() {
@@ -274,7 +303,7 @@
         }
 
         function rebuildModelSelect(selectElement, provider, modelType) {
-            const options = PROVIDER_MODEL_OPTIONS[provider] || PROVIDER_MODEL_OPTIONS.gemini;
+            const options = PROVIDER_MODEL_OPTIONS[provider] || PROVIDER_MODEL_OPTIONS.openrouter;
             selectElement.innerHTML = options
                 .map(option => `<option value="${option.value}">${option.label}</option>`)
                 .join('');
@@ -287,18 +316,23 @@
             }
             selectElement.value = selected;
             modelSelectionsByProvider[provider][modelType] = selected;
+
+            if (provider === 'openrouter') {
+                if (modelType === 'topic') customTopicModelContainer.style.display = selected === 'custom' ? 'block' : 'none';
+                if (modelType === 'explanation') customExplanationModelContainer.style.display = selected === 'custom' ? 'block' : 'none';
+            } else {
+                if (modelType === 'topic') customTopicModelContainer.style.display = 'none';
+                if (modelType === 'explanation') customExplanationModelContainer.style.display = 'none';
+            }
         }
 
         function syncProviderUi() {
             const provider = getSelectedProvider();
             const isNvidia = provider === 'nvidia';
+            const isOpenRouter = provider === 'openrouter';
 
-            apiKeyHelpLink.href = isNvidia
-                ? 'https://build.nvidia.com/'
-                : 'https://aistudio.google.com/app/apikey';
-            apiKeyHelpLink.textContent = isNvidia
-                ? 'Get your NVIDIA API key here'
-                : 'Get your Gemini API key here';
+            apiKeyHelpLink.href = isOpenRouter ? 'https://openrouter.ai/keys' : (isNvidia ? 'https://build.nvidia.com/' : 'https://aistudio.google.com/app/apikey');
+            apiKeyHelpLink.textContent = isOpenRouter ? 'Get your OpenRouter API key here' : (isNvidia ? 'Get your NVIDIA API key here' : 'Get your Gemini API key here');
 
             rebuildModelSelect(topicModelSelect, provider, 'topic');
             rebuildModelSelect(explanationModelSelect, provider, 'explanation');
@@ -314,12 +348,18 @@
         function handleTopicModelChange() {
             const provider = getSelectedProvider();
             modelSelectionsByProvider[provider].topic = topicModelSelect.value;
+            if (provider === 'openrouter') {
+                customTopicModelContainer.style.display = topicModelSelect.value === 'custom' ? 'block' : 'none';
+            }
             saveOptions();
         }
 
         function handleExplanationModelChange() {
             const provider = getSelectedProvider();
             modelSelectionsByProvider[provider].explanation = explanationModelSelect.value;
+            if (provider === 'openrouter') {
+                customExplanationModelContainer.style.display = explanationModelSelect.value === 'custom' ? 'block' : 'none';
+            }
             saveOptions();
         }
 
@@ -575,7 +615,14 @@
 
             const provider = getSelectedProvider();
             const providerName = getProviderName(provider);
-            const selectedModel = model || modelSelectionsByProvider[provider].explanation || PROVIDER_DEFAULT_MODELS[provider].explanation;
+            let selectedModel = model || modelSelectionsByProvider[provider].explanation || PROVIDER_DEFAULT_MODELS[provider].explanation;
+            if (selectedModel === 'custom') {
+                if (model === modelSelectionsByProvider[provider].topic) {
+                    selectedModel = customTopicModelInput && customTopicModelInput.value.trim() ? customTopicModelInput.value.trim() : 'anthropic/claude-3.7-sonnet';
+                } else {
+                    selectedModel = customExplanationModelInput && customExplanationModelInput.value.trim() ? customExplanationModelInput.value.trim() : 'anthropic/claude-3.5-haiku';
+                }
+            }
             let retryCount = 0;
 
             while (true) {
@@ -628,12 +675,19 @@
                     if (generationConfig) {
                         body.generationConfig = generationConfig;
                     }
-                } else {
+                                } else if (provider === 'nvidia' || provider === 'openrouter') {
                     if (fileBytesBase64) {
-                        throw new Error("NVIDIA API mode currently supports text-only requests in this tool.");
+                        throw new Error(`${providerName} API mode currently supports text-only requests in this tool.`);
                     }
 
-                    url = 'https://integrate.api.nvidia.com/v1/chat/completions';
+                    if (provider === 'openrouter') {
+                        url = 'https://openrouter.ai/api/v1/chat/completions';
+                        headers['HTTP-Referer'] = window.location.href;
+                        headers['X-Title'] = 'Study Tools';
+                    } else {
+                        url = 'https://integrate.api.nvidia.com/v1/chat/completions';
+                    }
+
                     headers.Authorization = `Bearer ${apiKey}`;
                     body = {
                         model: selectedModel,
@@ -659,14 +713,14 @@
                             throw new Error("Invalid successful response structure from Gemini.");
                         }
 
-                        const nvidiaText = data?.choices?.[0]?.message?.content;
+                                                const nvidiaText = data?.choices?.[0]?.message?.content;
                         if (typeof nvidiaText === 'string' && nvidiaText.trim()) {
                             return nvidiaText;
                         }
                         if (Array.isArray(nvidiaText)) {
                             return nvidiaText.map(part => typeof part === 'string' ? part : part?.text || '').join('\n').trim();
                         }
-                        throw new Error("Invalid successful response structure from NVIDIA.");
+                        throw new Error(`Invalid successful response structure from ${providerName}.`);
                     }
 
                     const rawError = await response.text();
@@ -850,7 +904,11 @@
             `;
 
             try {
-                return await callGeminiWithRetry(prompt, null, model); 
+                let callModel = model;
+                if (model === 'custom' && customExplanationModelInput && customExplanationModelInput.value.trim()) {
+                    callModel = customExplanationModelInput.value.trim();
+                }
+                return await callGeminiWithRetry(prompt, null, callModel);
             } catch (error) {
                 console.error(`Error in explanation call for topic "${topic}":`, error);
                 return `<p>(AI explanation failed: ${error.message})</p>`;
