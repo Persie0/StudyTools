@@ -153,8 +153,8 @@
                 explanation: 'meta/llama-3.3-70b-instruct'
             },
             openrouter: {
-                topic: 'anthropic/claude-3.7-sonnet',
-                explanation: 'anthropic/claude-3.5-haiku'
+                topic: 'openrouter/owl-alpha',
+                explanation: 'openrouter/owl-alpha'
             }
         };
 
@@ -171,6 +171,7 @@
             ]
        ,
             openrouter: [
+                { value: 'openrouter/owl-alpha', label: 'Owl Alpha (Default)' },
                 { value: 'anthropic/claude-3.7-sonnet', label: 'Claude 3.7 Sonnet (Recommended)' },
                 { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
                 { value: 'anthropic/claude-3.5-haiku', label: 'Claude 3.5 Haiku (Fast)' },
@@ -190,6 +191,7 @@
         let keyPool = []; // To manage multiple API keys
         let modelSelectionsByProvider = {
             gemini: { ...PROVIDER_DEFAULT_MODELS.gemini },
+            openrouter: { ...PROVIDER_DEFAULT_MODELS.openrouter },
             nvidia: { ...PROVIDER_DEFAULT_MODELS.nvidia }
         };
 
