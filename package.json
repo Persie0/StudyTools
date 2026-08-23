@@ -1,0 +1,12 @@
+{
+  "name": "studytools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "test:live": "node --test tests/gemini-live.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
