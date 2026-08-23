@@ -1,292 +1,36 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Study Tools - PDF Processing Suite</title>
-    <style>
-        body {
-            font-family: system-ui, -apple-system, sans-serif;
-            line-height: 1.6;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            background-color: white;
-            padding: 2rem;
-            border-radius: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .quick-links {
-            text-align: center;
-            padding: 1rem;
-            background-color: #f8f9fa;
-            border-radius: 8px;
-            margin-bottom: 2rem;
-        }
-        .quick-links a {
-            display: inline-block;
-            padding: 8px 16px;
-            margin: 0 10px;
-            background-color: #3498db;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            font-size: 0.9rem;
-        }
-        .quick-links a:hover {
-            background-color: #2980b9;
-        }
-        .tool-card {
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 20px;
-            margin: 20px 0;
-            background-color: #fff;
-            transition: transform 0.2s;
-        }
-        .tool-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        }
-        .usage-details {
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.3s ease-out;
-            background-color: #f8f9fa;
-            border-radius: 5px;
-            margin-top: 10px;
-        }
-        .usage-details.expanded {
-            max-height: 500px;
-            padding: 15px;
-        }
-        .usage-toggle {
-            background-color: #e9ecef;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-top: 10px;
-            font-size: 0.9rem;
-        }
-        .usage-toggle:hover {
-            background-color: #dee2e6;
-        }
-        h1 {
-            color: #2c3e50;
-            text-align: center;
-            margin-bottom: 2rem;
-        }
-        h2 {
-            color: #34495e;
-            margin-bottom: 1rem;
-        }
-        .btn {
-            display: inline-block;
-            padding: 10px 20px;
-            background-color: #3498db;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            transition: background-color 0.2s;
-        }
-        .btn:hover {
-            background-color: #2980b9;
-        }
-        .features {
-            margin-top: 10px;
-            padding-left: 20px;
-        }
-        .privacy-notice {
-            margin-top: 2rem;
-            padding: 1rem;
-            background-color: #e8f4f8;
-            border-radius: 5px;
-            font-size: 0.9rem;
-        }
-    </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Browser-first tools for PDFs, lecture slides, and Anki decks.">
+  <title>StudyTools</title>
+  <style>
+    :root{color-scheme:light;--bg:#f6f7f9;--card:#fff;--text:#101828;--muted:#667085;--line:#e4e7ec;--blue:#2563eb;--soft:#eff6ff}*{box-sizing:border-box}body{margin:0;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}a{color:inherit}.shell{max-width:1120px;margin:auto;padding:28px 24px 64px}.nav{display:flex;justify-content:space-between;align-items:center}.brand{font-weight:800;letter-spacing:-.03em}.github{font-size:13px;color:var(--muted);text-decoration:none}.hero{padding:90px 0 54px;max-width:760px}.eyebrow{font-size:12px;font-weight:800;color:var(--blue);text-transform:uppercase;letter-spacing:.12em}.hero h1{font-size:clamp(44px,7vw,76px);line-height:1;letter-spacing:-.06em;margin:12px 0 18px}.hero p{font-size:19px;line-height:1.6;color:var(--muted);max-width:680px}.primary{display:inline-block;margin-top:18px;background:var(--text);color:#fff;text-decoration:none;padding:12px 18px;border-radius:11px;font-size:14px;font-weight:750}.section-head{display:flex;align-items:end;justify-content:space-between;gap:20px;margin-bottom:16px}.section-head h2{margin:0;font-size:18px}.section-head p{margin:0;color:var(--muted);font-size:12px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;text-decoration:none;min-height:190px;display:flex;flex-direction:column;transition:.16s}.card:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(16,24,40,.08)}.card.featured{grid-column:span 2;background:linear-gradient(135deg,#fff 0%,var(--soft) 100%);border-color:#bfdbfe}.icon{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:#f2f4f7;font-size:11px;font-weight:850;margin-bottom:28px}.featured .icon{background:#dbeafe;color:#1d4ed8}.card h3{font-size:16px;margin:0 0 6px;letter-spacing:-.02em}.card p{font-size:12px;color:var(--muted);margin:0;line-height:1.5}.arrow{margin-top:auto;padding-top:18px;font-size:13px;font-weight:700}.notice{margin-top:26px;border:1px solid var(--line);border-radius:14px;padding:16px 18px;color:var(--muted);font-size:12px;line-height:1.6}.notice strong{color:var(--text)}footer{margin-top:54px;color:var(--muted);font-size:11px}@media(max-width:760px){.hero{padding-top:60px}.grid{grid-template-columns:1fr}.card.featured{grid-column:span 1}.section-head{align-items:start;flex-direction:column}}@media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0e1117;--card:#151922;--text:#f2f4f7;--muted:#98a2b3;--line:#2b313c;--blue:#7aa7ff;--soft:#14213b}.primary{background:#f2f4f7;color:#101828}.icon{background:#202631}.card.featured{background:linear-gradient(135deg,#151922 0%,#14213b 100%);border-color:#284b7a}}
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h1>PDF Study Tools</h1>
-        
-        <div class="quick-links">
-            <a href="./pdfSplitter/pdf-splitter.html">Chapter Splitter</a>
-            <a href="./slidesToAnki/gemini-anki.html">AI Anki Converter</a>
-            <a href="./slidesToAnki/gemini-anki-topics.html">Topic Converter</a>
-            <a href="./slidesToAnki/slidesanki.html">Slides to Anki</a>
-            <a href="./pdfPageStripper/stripper.html">Page Stripper</a>
-            <a href="./jsonToAnki/jsonToAnki.html">JSON to Anki</a>
-        </div>
+  <main class="shell">
+    <nav class="nav"><div class="brand">StudyTools</div><a class="github" href="https://github.com/Persie0/StudyTools">GitHub ↗</a></nav>
+    <section class="hero">
+      <div class="eyebrow">Study files, minus the busywork</div>
+      <h1>PDF tools that stay out of your way.</h1>
+      <p>Split lectures, clean incremental slides, and turn a PDF into an Anki deck with Gemini reading the actual visual document.</p>
+      <a class="primary" href="./slidesToAnki/gemini-anki.html">Create an AI Anki deck →</a>
+    </section>
 
-        <div class="tool-card">
-            <h2>PDF Chapter Splitter</h2>
-            <p>Split large PDFs into smaller chapter-based files - perfect for working with AI tools that have token limits.</p>
-            <ul class="features">
-                <li>Automatic chapter detection</li>
-                <li>Adjustable splitting depth</li>
-                <li>Download results as ZIP</li>
-            </ul>
-            <button class="usage-toggle" onclick="toggleUsage('chapter-splitter-usage')">Show Usage</button>
-            <div id="chapter-splitter-usage" class="usage-details">
-                <h3>How to Use:</h3>
-                <ol>
-                    <li>Upload your PDF using drag & drop or file dialog</li>
-                    <li>Choose how deep you want to split (main chapters only, include subchapters, etc.)</li>
-                    <li>Click "Split PDF"</li>
-                    <li>Download your ZIP file containing individual chapter PDFs</li>
-                    <li>Use these smaller PDFs with AI tools that have token limits</li>
-                </ol>
-                <p><strong>Note:</strong> Your PDF must have a table of contents/outline for splitting to work.</p>
-            </div>
-            <a href="./pdfSplitter/pdf-splitter.html" class="btn">Try Chapter Splitter</a>
-        </div>
+    <div class="section-head"><h2>Tools</h2><p>Static site · no StudyTools backend</p></div>
+    <section class="grid">
+      <a class="card featured" href="./slidesToAnki/gemini-anki.html"><div class="icon">AI</div><h3>Gemini PDF → Anki</h3><p>Native PDF/vision analysis, free-tier-first model selection, source-page grounding and proper Anki media.</p><div class="arrow">Open converter →</div></a>
+      <a class="card" href="./pdfSplitter/pdf-splitter.html"><div class="icon">PDF</div><h3>Chapter splitter</h3><p>Split PDFs using their outline so long documents become manageable chapter files.</p><div class="arrow">Open →</div></a>
+      <a class="card" href="./pdfPageStripper/stripper.html"><div class="icon">−</div><h3>Page stripper</h3><p>Remove intermediate build slides and keep the most complete presentation pages.</p><div class="arrow">Open →</div></a>
+      <a class="card" href="./slidesToAnki/slidesanki.html"><div class="icon">A</div><h3>Slides → Anki</h3><p>Non-AI slide-image deck creation for a fast deterministic workflow.</p><div class="arrow">Open →</div></a>
+      <a class="card" href="./slidesToAnki/gemini-anki.html?mode=topics"><div class="icon">T</div><h3>Topic deck mode</h3><p>Use topic/concept fronts with AI explanations while retaining source-page citations.</p><div class="arrow">Open →</div></a>
+      <a class="card" href="./slidesToAnki/gemini-anki.html?input=json"><div class="icon">{ }</div><h3>JSON → Anki</h3><p>Build a deck directly from front/back JSON without any AI request or API key.</p><div class="arrow">Open →</div></a>
+    </section>
 
-        <div class="tool-card">
-            <h2>PDF Slides to Anki Converter</h2>
-            <p>Transform your PDF presentations into Anki flashcards automatically.</p>
-            <ul class="features">
-                <li>Automatic card creation from slides</li>
-                <li>Merge similar slides option</li>
-                <li>Progress tracking</li>
-            </ul>
-            <button class="usage-toggle" onclick="toggleUsage('slides-anki-usage')">Show Usage</button>
-            <div id="slides-anki-usage" class="usage-details">
-                <h3>How to Use:</h3>
-                <ol>
-                    <li>Upload your presentation PDF</li>
-                    <li>Choose whether to combine slides with the same title</li>
-                    <li>Wait for processing to complete</li>
-                    <li>Download your Anki deck with:
-                        <ul>
-                            <li>Front: Top text from each slide</li>
-                            <li>Back: Full slide image</li>
-                        </ul>
-                    </li>
-                    <li>Import the deck into Anki</li>
-                </ol>
-            </div>
-            <a href="./slidesToAnki/slidesanki.html" class="btn">Try Slides to Anki</a>
-        </div>
-
-        <div class="tool-card">
-            <h2>PDF Page Stripper</h2>
-            <p>Clean up incrementally built presentation slides by removing intermediate steps.</p>
-            <ul class="features">
-                <li>Multiple comparison modes</li>
-                <li>Batch processing</li>
-                <li>Keeps only final slides</li>
-            </ul>
-            <button class="usage-toggle" onclick="toggleUsage('page-stripper-usage')">Show Usage</button>
-            <div id="page-stripper-usage" class="usage-details">
-                <h3>How to Use:</h3>
-                <ol>
-                    <li>Upload your presentation PDF(s)</li>
-                    <li>Choose comparison mode:
-                        <ul>
-                            <li><strong>Word Comparison:</strong> Strips more pages by comparing at word level</li>
-                            <li><strong>Full Text Comparison:</strong> More conservative, compares entire text</li>
-                        </ul>
-                    </li>
-                    <li>Process files</li>
-                    <li>Download clean PDFs with only final slides</li>
-                </ol>
-                <p><strong>Best for:</strong> Presentations with step-by-step slide builds or animations</p>
-            </div>
-            <a href="./pdfPageStripper/stripper.html" class="btn">Try Page Stripper</a>
-        </div>
-
-        <div class="tool-card">
-            <h2>AI-Powered PDF to Anki Converter</h2>
-            <p>Convert PDFs to Anki flashcards with AI-powered content analysis.</p>
-            <ul class="features">
-                <li>Automatically groups related slides</li>
-                <li>Generates concise explanations with Gemini AI</li>
-                <li>Creates structured Anki cards with key concepts</li>
-                <li>Processes content directly in your browser</li>
-            </ul>
-            <a href="./slidesToAnki/gemini-anki.html" class="btn">Try AI Anki Converter</a>
-            <button class="usage-toggle" onclick="toggleUsage('ai-anki-usage')">Show Usage</button>
-            <div class="usage-details" id="ai-anki-usage">
-                <h3>How to use:</h3>
-                <ol>
-                    <li>Click "Choose PDF" or drag and drop your PDF file</li>
-                    <li>Enter your Gemini API key (stored locally in your browser)</li>
-                    <li>Click "Generate Anki Deck" and wait for processing</li>
-                    <li>Download the generated .apkg file and import it into Anki</li>
-                </ol>
-            </div>
-        </div>
-
-        <div class="tool-card">
-            <h2>AI-Powered PDF to Anki Topic Converter (File Upload)</h2>
-            <p>Convert PDFs to Anki flashcards by extracting topics and generating explanations using full PDF file uploads.</p>
-            <ul class="features">
-                <li>AI identifies all main topics and subtopics from your PDF</li>
-                <li>Uploads full PDF for each topic explanation (slower but more accurate)</li>
-                <li>Creates topic-based Anki cards with AI explanations</li>
-                <li>Processes content directly in your browser</li>
-            </ul>
-            <a href="./slidesToAnki/gemini-anki-topics.html" class="btn">Try Topic Converter</a>
-            <button class="usage-toggle" onclick="toggleUsage('topic-converter-usage')">Show Usage</button>
-            <div class="usage-details" id="topic-converter-usage">
-                <h3>How to use:</h3>
-                <ol>
-                    <li>Upload a single PDF file</li>
-                    <li>Enter your Gemini API key(s) (stored locally in your browser)</li>
-                    <li>The AI analyzes the full PDF to identify topics</li>
-                    <li>For each topic, the full PDF is uploaded again for explanation generation</li>
-                    <li>Download the generated .apkg file and import it into Anki</li>
-                </ol>
-                <p><strong>Warning:</strong> This method uploads the entire PDF file for every topic, making it slower and more API-intensive.</p>
-            </div>
-        </div>
-
-        <div class="tool-card">
-            <h2>JSON to Anki Deck Converter</h2>
-            <p>Convert JSON, PDF, or text content into Anki flashcards - now with AI support!</p>
-            <ul class="features">
-                <li>Three input modes: JSON, PDF upload, or text input</li>
-                <li>AI-powered flashcard generation with Gemini</li>
-                <li>Direct JSON input for manual control</li>
-                <li>Instant feedback on JSON validity</li>
-            </ul>
-            <button class="usage-toggle" onclick="toggleUsage('json-anki-usage')">Show Usage</button>
-            <div id="json-anki-usage" class="usage-details">
-                <h3>How to Use:</h3>
-                <p><strong>JSON Mode:</strong></p>
-                <ol>
-                    <li>Paste your JSON data into the input field</li>
-                    <li>Click "Generate Anki Deck"</li>
-                    <li>Download and import into Anki</li>
-                </ol>
-                <p><strong>PDF/Text Mode:</strong></p>
-                <ol>
-                    <li>Switch to PDF Upload or Text Input tab</li>
-                    <li>Enter your Gemini API key (get one free from Google)</li>
-                    <li>Upload PDF or paste text content</li>
-                    <li>Let AI generate flashcards automatically</li>
-                    <li>Download and import into Anki</li>
-                </ol>
-            </div>
-            <a href="./jsonToAnki/jsonToAnki.html" class="btn">Try JSON to Anki</a>
-        </div>
-
-        <div class="privacy-notice">
-            <strong>Privacy Notice:</strong> All tools process files directly in your browser. Your files are never uploaded to any server, ensuring complete privacy and data security.
-        </div>
-    </div>
-
-    <script>
-        function toggleUsage(id) {
-            const element = document.getElementById(id);
-            element.classList.toggle('expanded');
-            const button = element.previousElementSibling;
-            button.textContent = element.classList.contains('expanded') ? 'Hide Usage' : 'Show Usage';
-        }
-    </script>
+    <div class="notice"><strong>Privacy:</strong> local PDF utilities process files in your browser. For AI Anki generation, your selected PDF/text content is sent directly from your browser to Google Gemini after you click Generate; it does not pass through a StudyTools server. API-key persistence is optional and browser-local.</div>
+    <footer>StudyTools · browser-first study utilities</footer>
+  </main>
 </body>
 </html>
