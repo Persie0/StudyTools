@@ -26,6 +26,7 @@ The same UI supports:
 - **PDF** → AI-generated deck
 - **Text** → AI-generated deck
 - **JSON** → deterministic deck, no API key required
+- **Slide explanations** → upload a slide PDF and download a study PDF with each original slide followed by a simple, detailed explanation. Slide images are sent directly to Gemini; output PDF assembly happens locally.
 
 Legacy topic and JSON URLs redirect into the unified converter so model and API behavior cannot drift between separate implementations.
 
@@ -47,7 +48,7 @@ Requires Node 20+ only for tests; the application itself remains static HTML/CSS
 npm test
 ```
 
-The suite covers model discovery/ranking, free + multimodal defaults, API-key handling, retry classification, PDF request construction, AI JSON normalization, page grounding, Anki media references, and regression checks for old providers/deprecated Gemini defaults.
+The suite covers Gemini model discovery and request handling, Anki generation helpers, slide explanation prompts and validation, plus smoke regression checks for the splitter, page stripper, non-AI Slides → Anki, and all converter modes.
 
 An optional live Gemini smoke test runs when `GEMINI_API_KEY` is available:
 

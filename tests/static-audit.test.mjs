@@ -8,7 +8,7 @@ const read = path => readFile(new URL(path, root), 'utf8');
 test('primary AI converter is Gemini-only and uses shared module code', async () => {
   const html = await read('slidesToAnki/gemini-anki.html');
   const app = await read('slidesToAnki/app.js');
-  assert.match(html, /Gemini PDF/);
+  assert.match(html, /PDF study modes|Gemini.*Anki|Slide explanations/i);
   assert.doesNotMatch(html + app, /NVIDIA NIM|OpenRouter|corsproxy/i);
   assert.doesNotMatch(html + app, /gemini-2\.0-flash/);
   assert.match(app, /\.\/lib\/gemini\.js/);
