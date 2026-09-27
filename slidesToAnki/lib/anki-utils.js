@@ -135,12 +135,12 @@ export function buildSlideExplanationPrompt({ pageNumber, pageCount, language = 
     `This is slide ${pageNumber} of ${pageCount}. Refer to other slides only when they are present in the supplied context.`,
     'Return JSON only in this exact shape:',
     '{"title":"short descriptive slide title","explanation":"clear, detailed explanation in paragraphs","keyPoints":["important point","important point"],"terms":[{"term":"term","meaning":"meaning"}]}'
-  ].join('\\n');
+  ].join('\n');
 }
 
 export function normalizeSlideExplanation(value, pageNumber) {
   const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-  const clean = input => String(input ?? '').replace(/\\s+/g, ' ').trim();
+  const clean = input => String(input ?? '').replace(/\s+/g, ' ').trim();
   const title = clean(raw.title) || `Slide ${pageNumber}`;
   const explanation = clean(raw.explanation || raw.explanationText || raw.summary);
   if (!explanation) throw new Error(`Gemini returned no explanation for slide ${pageNumber}.`);
