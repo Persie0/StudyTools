@@ -519,7 +519,7 @@ async function exportExplanationPdf(file, slides) {
     const page = output.addPage([width, height]);
     const embedded = await output.embedPage(original);
     const availableWidth = width - margin * 2;
-    const slideArea = Math.min(height * 0.52, Math.max(150, height - 300));
+    const slideArea = Math.min(height * 0.40, Math.max(150, height - 300));
     const scale = Math.min(availableWidth / embedded.width, slideArea / embedded.height);
     const imageWidth = embedded.width * scale;
     const imageHeight = embedded.height * scale;
