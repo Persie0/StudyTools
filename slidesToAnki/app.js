@@ -543,7 +543,7 @@ async function exportExplanationPdf(file, slides) {
   const blob = new Blob([bytes], { type: 'application/pdf' });
   const name = `${safeDeckName(file.name)} - explanations.pdf`;
   saveAs(blob, name);
-  return { name, count: slides.length, pages: slides.length };
+  return { name, count: slides.length, pages: slides.length, kind: 'explanations' };
 }
 
 async function processSlides(client, model) {
@@ -560,7 +560,7 @@ function renderResults(results) {
   ui.results.innerHTML = results.map(result => `
     <div class="result-card">
       <span class="result-check">✓</span>
-      <div><strong>${escapeHtml(result.name)}</strong><p>${result.count} cards${result.pages ? ` · ${result.pages} PDF pages` : ''} · download started</p></div>
+      <div><strong>${escapeHtml(result.name)}</strong><p>${result.kind === 'explanations' ? `${result.count} explained slides` : `${result.count} cards`}${result.pages ? ` · ${result.pages} PDF pages` : ''} · download started</p></div>
     </div>`).join('');
 }
 
