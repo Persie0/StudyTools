@@ -120,3 +120,41 @@ export function cardBackHtml(card, sourceMediaNames = []) {
   const images = sourceMediaNames.map(name => `<div class="source-slide"><img src="${escapeHtml(name)}" alt="Source page"></div>`).join('');
   return `${answer}${pages}${images}`;
 }
+
+
+export function buildSlideExplanationPrompt({ pageNumber, pageCount, language = 'auto' } = {}) {
+  const languageRule = language === 'auto'
+    ? 'Write in the primary language used on the slide.'
+    : `Write in ${language}.`;
+  return [
+    'Explain this lecture slide for a student who wants to understand and study the material.',
+    'Use the slide image as the source of truth. Explain every meaningful concept, label, formula, diagram, relationship, and example visible on it.',
+    'Be simple but detailed: define unfamiliar terms, explain why formulas or processes work, connect the elements, and mention likely misconceptions. Do not merely repeat the slide text.',
+    'Stay faithful to the slide. If an element is unreadable or the slide lacks context, say so briefly instead of guessing.',
+    languageRule,
+    `This is slide ${pageNumber} of ${pageCount}. Refer to other slides only when they are present in the supplied context.`,
+    'Return JSON only in this exact shape:',
+    '{"title":"short descriptive slide title","explanation":"clear, detailed explanation in paragraphs","keyPoints":["important point","important point"],"terms":[{"term":"term","meaning":"meaning"}]}'
+  ].join('\\n');
+}
+
+export function normalizeSlideExplanation(value, pageNumber) {
+  const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const clean = input => String(input ?? '').replace(/\\s+/g, ' ').trim();
+  const title = clean(raw.title) || `Slide ${pageNumber}`;
+  const explanation = clean(raw.explanation || raw.explanationText || raw.summary);
+  if (!explanation) throw new Error(`Gemini returned no explanation for slide ${pageNumber}.`);
+  const keyPoints = (Array.isArray(raw.keyPoints) ? raw.keyPoints : Array.isArray(raw.key_points) ? raw.key_points : [])
+    .map(clean).filter(Boolean).slice(0, 8);
+  const terms = (Array.isArray(raw.terms) ? raw.terms : [])
+    .map(item => ({ term: clean(item?.term), meaning: clean(item?.meaning || item?.definition) }))
+    .filter(item => item.term && item.meaning).slice(0, 8);
+  return { pageNumber, title, explanation, keyPoints, terms };
+}
+
+export function normalizeSlideExplanations(payload, pageCount) {
+  const raw = Array.isArray(payload) ? payload : Array.isArray(payload?.slides) ? payload.slides : null;
+  if (!raw) throw new Error('Gemini returned an invalid slide explanation payload.');
+  if (raw.length !== pageCount) throw new Error(`Expected ${pageCount} slide explanations, but received ${raw.length}.`);
+  return raw.map((item, index) => normalizeSlideExplanation(item, index + 1));
+}
