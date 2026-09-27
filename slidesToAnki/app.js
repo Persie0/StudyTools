@@ -10,6 +10,8 @@ import {
 } from './lib/gemini.js';
 import {
   buildPdfCardPrompt,
+  buildSlideExplanationPrompt,
+  normalizeSlideExplanations,
   buildTextCardPrompt,
   cardBackHtml,
   escapeHtml,
@@ -33,6 +35,7 @@ const ui = {
   model: $('model-select'), refreshModels: $('refresh-models'), modelMeta: $('model-meta'),
   inputTabs: [...document.querySelectorAll('[data-input-tab]')], inputPanels: [...document.querySelectorAll('[data-input-panel]')],
   fileInput: $('pdf-input'), choosePdfs: $('choose-pdfs'), dropzone: $('dropzone'), fileList: $('file-list'), textInput: $('text-input'), jsonInput: $('json-input'),
+  slideFiles: $('slide-pdf-input'), chooseSlidePdf: $('choose-slide-pdf'), slideDropzone: $('slide-dropzone'), slideFileList: $('slide-file-list'), explainSlides: $('explain-slides'),
   density: $('density'), cardMode: $('card-mode'), strategy: $('strategy'), language: $('language'),
   includeImages: $('include-images'), maxSourceImages: $('max-source-images'),
   generate: $('generate'), progress: $('progress'), progressFill: $('progress-fill'), status: $('status'), error: $('error'), results: $('results'),
@@ -41,6 +44,7 @@ const ui = {
 
 const state = {
   files: [],
+  slideFile: null,
   models: fallbackModelList(),
   activeInput: 'pdf',
   busy: false
@@ -90,6 +94,7 @@ function updateGenerateState() {
     return;
   }
   const hasInput = state.activeInput === 'pdf' ? state.files.length > 0
+    : state.activeInput === 'slides' ? Boolean(state.slideFile)
     : state.activeInput === 'text' ? ui.textInput.value.trim().length > 0
     : ui.jsonInput.value.trim().length > 0;
   const needsAi = state.activeInput !== 'json';
@@ -136,7 +141,7 @@ async function refreshModels() {
 }
 
 function switchInput(input) {
-  state.activeInput = ['pdf', 'text', 'json'].includes(input) ? input : 'pdf';
+  state.activeInput = ['pdf', 'text', 'json', 'slides'].includes(input) ? input : 'pdf';
   for (const tab of ui.inputTabs) {
     const active = tab.dataset.inputTab === state.activeInput;
     tab.classList.toggle('active', active);
@@ -452,6 +457,101 @@ async function processJson() {
   return [{ name: deckName, count, pages: null }];
 }
 
+function addSlideFile(file) {
+  if (!file) return;
+  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+    showError(new Error('Choose a PDF containing your slides.'));
+    return;
+  }
+  state.slideFile = file;
+  ui.slideFileList.innerHTML = `<div class="file-row"><div><strong>${escapeHtml(file.name)}</strong><span>${(file.size / 1024 / 1024).toFixed(1)} MB</span></div><button type="button" class="icon-button" data-remove-slide-file aria-label="Remove ${escapeHtml(file.name)}">×</button></div>`;
+  clearError();
+  updateGenerateState();
+}
+
+async function generateSlideExplanations(client, model, pdf) {
+  const slides = [];
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+    setStatus(`Explaining slide ${pageNumber} of ${pdf.numPages}…`, 8 + ((pageNumber - 1) / pdf.numPages) * 72);
+    const image = await renderPdfPage(pdf, pageNumber, 1600);
+    const payload = await client.generateJson({
+      model,
+      prompt: buildSlideExplanationPrompt({ pageNumber, pageCount: pdf.numPages, language: ui.language.value }),
+      images: [{ mimeType: 'image/jpeg', data: bytesToBase64(image) }]
+    });
+    slides.push(...normalizeSlideExplanations({ slides: [payload] }, 1).map(slide => ({ ...slide, pageNumber })));
+  }
+  return slides;
+}
+
+function drawWrappedText(page, font, text, x, y, maxWidth, fontSize, lineHeight, color) {
+  const words = String(text || '').split(/\\s+/).filter(Boolean);
+  let line = '';
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (line && font.widthOfTextAtSize(candidate, fontSize) > maxWidth) {
+      page.drawText(line, { x, y, size: fontSize, font, color });
+      y -= lineHeight;
+      line = word;
+    } else line = candidate;
+  }
+  if (line) { page.drawText(line, { x, y, size: fontSize, font, color }); y -= lineHeight; }
+  return y;
+}
+
+async function exportExplanationPdf(file, sourcePdf, slides) {
+  const output = await PDFLib.PDFDocument.create();
+  const source = await PDFLib.PDFDocument.load(await file.arrayBuffer());
+  const regular = await output.embedFont(PDFLib.StandardFonts.Helvetica);
+  const bold = await output.embedFont(PDFLib.StandardFonts.HelveticaBold);
+  const margin = 38;
+  const gap = 14;
+  const navy = PDFLib.rgb(0.10, 0.16, 0.27);
+  const muted = PDFLib.rgb(0.34, 0.39, 0.47);
+
+  for (const slide of slides) {
+    const original = source.getPage(slide.pageNumber - 1);
+    const { width, height } = original.getSize();
+    const page = output.addPage([width, height]);
+    const embedded = await output.embedPage(original);
+    const availableWidth = width - margin * 2;
+    const slideArea = Math.min(height * 0.52, Math.max(150, height - 300));
+    const scale = Math.min(availableWidth / embedded.width, slideArea / embedded.height);
+    const imageWidth = embedded.width * scale;
+    const imageHeight = embedded.height * scale;
+    const imageY = height - margin - imageHeight;
+    page.drawPage(embedded, { x: (width - imageWidth) / 2, y: imageY, width: imageWidth, height: imageHeight });
+
+    let y = imageY - gap;
+    page.drawText(`Slide ${slide.pageNumber}: ${slide.title}`, { x: margin, y, size: 14, font: bold, color: navy });
+    y -= 22;
+    y = drawWrappedText(page, regular, slide.explanation, margin, y, availableWidth, 9.5, 13, navy);
+    for (const point of slide.keyPoints) {
+      y = drawWrappedText(page, regular, `• ${point}`, margin + 8, y - 3, availableWidth - 8, 9, 12, navy);
+    }
+    for (const item of slide.terms) {
+      y = drawWrappedText(page, regular, `${item.term}: ${item.meaning}`, margin + 8, y - 3, availableWidth - 8, 8.5, 11, muted);
+    }
+    if (y < margin) throw new Error(`The explanation for slide ${slide.pageNumber} is too long to fit below its slide. Shorten the explanation and try again.`);
+  }
+
+  const bytes = await output.save();
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  const name = `${safeDeckName(file.name)} - explanations.pdf`;
+  saveAs(blob, name);
+  return { name, count: slides.length, pages: slides.length };
+}
+
+async function processSlides(client, model) {
+  const file = state.slideFile;
+  if (!file) throw new Error('Choose a slide PDF first.');
+  setStatus(`Loading ${file.name}…`, 4);
+  const { pdf } = await loadPdf(file);
+  const slides = await generateSlideExplanations(client, model, pdf);
+  setStatus('Building the slide explanations PDF…', 88);
+  return [await exportExplanationPdf(file, pdf, slides)];
+}
+
 function renderResults(results) {
   ui.results.innerHTML = results.map(result => `
     <div class="result-card">
@@ -509,6 +609,15 @@ function clearKeys() {
 
 function bindEvents() {
   ui.inputTabs.forEach(tab => tab.addEventListener('click', () => switchInput(tab.dataset.inputTab)));
+ui.chooseSlidePdf.addEventListener('click', () => ui.slideFiles.click());
+ui.slideFiles.addEventListener('change', () => addSlideFile(ui.slideFiles.files?.[0]));
+ui.slideDropzone.addEventListener('dragover', event => { event.preventDefault(); ui.slideDropzone.classList.add('dragging'); });
+ui.slideDropzone.addEventListener('dragleave', () => ui.slideDropzone.classList.remove('dragging'));
+ui.slideDropzone.addEventListener('drop', event => {
+  event.preventDefault();
+  ui.slideDropzone.classList.remove('dragging');
+  addSlideFile(event.dataTransfer?.files?.[0]);
+});
   ui.fileInput.addEventListener('change', event => addFiles(event.target.files));
   ui.choosePdfs.addEventListener('click', event => { event.stopPropagation(); ui.fileInput.click(); });
   ui.dropzone.addEventListener('click', event => { if (!event.target.closest('button')) ui.fileInput.click(); });
@@ -527,6 +636,10 @@ function bindEvents() {
   ui.apiKeys.addEventListener('change', () => { if (apiKeys()) refreshModels().catch(error => console.warn('Model discovery failed; using curated fallback list.', error)); });
   ui.textInput.addEventListener('input', updateGenerateState);
   ui.jsonInput.addEventListener('input', updateGenerateState);
+ui.explainSlides.addEventListener('click', () => {
+  switchInput('slides');
+  if (state.slideFile) runGeneration();
+});
   ui.saveKeys.addEventListener('click', saveKeys);
   ui.clearKeys.addEventListener('click', clearKeys);
   ui.refreshModels.addEventListener('click', async () => { clearError(); try { await refreshModels(); } catch (error) { showError(error); } });
