@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Create high-quality Anki decks from PDFs with Gemini multimodal AI in your browser.">
-  <title>Gemini PDF → Anki · StudyTools</title>
+  <title>StudyTools · PDF study modes</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js" defer></script>
   <script src="../pdfSplitter/lib/pdf-lib.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/gh/krmanik/genanki-js@7a88bc5d3a22ae375309080daffc36f4e11e51cd/dist/genanki.js" defer></script>
@@ -63,6 +63,7 @@
           <button type="button" role="tab" data-input-tab="pdf" class="active">PDF</button>
           <button type="button" role="tab" data-input-tab="text">Text</button>
           <button type="button" role="tab" data-input-tab="json">JSON</button>
+          <button type="button" role="tab" data-input-tab="slides">Slide explanations</button>
         </div>
 
         <div data-input-panel="pdf">
@@ -74,6 +75,18 @@
             <button id="choose-pdfs" type="button" class="primary-small">Choose PDFs</button>
           </div>
           <div id="file-list" class="file-list"></div>
+        </div>
+
+        <div data-input-panel="slides" hidden>
+          <input id="slide-pdf-input" type="file" accept="application/pdf,.pdf" hidden>
+          <div id="slide-dropzone" class="dropzone" tabindex="0" role="button" aria-controls="slide-pdf-input">
+            <div class="drop-icon">PDF</div>
+            <h2>Explain every slide</h2>
+            <p>Upload a lecture PDF. Each original slide will be followed by a clear, detailed explanation on the same page.</p>
+            <button id="choose-slide-pdf" type="button" class="primary-small">Choose slide PDF</button>
+          </div>
+          <div id="slide-file-list" class="file-list"><p class="muted">No slide PDF selected.</p></div>
+          <p class="privacy-mini">Slide images are sent directly to Google Gemini; the final PDF is assembled in your browser.</p>
         </div>
 
         <div data-input-panel="text" hidden>
@@ -90,6 +103,7 @@
         <div class="run-card">
           <div class="run-copy"><strong>Ready to build</strong><p>AI requests go directly from this browser to Google Gemini. StudyTools has no upload server.</p></div>
           <button id="generate" class="primary" type="button" disabled>Generate .apkg</button>
+          <button id="explain-slides" class="primary" type="button" hidden>Generate explanation PDF</button>
         </div>
         <div id="error" class="error" role="alert" hidden></div>
         <div id="progress" class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="progress-fill"></span></div>
