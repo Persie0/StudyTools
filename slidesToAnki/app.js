@@ -91,6 +91,7 @@ function currentModel() {
 function updateGenerateState() {
   if (state.busy) {
     ui.generate.disabled = true;
+    ui.explainSlides.disabled = true;
     return;
   }
   const hasInput = state.activeInput === 'pdf' ? state.files.length > 0
@@ -488,7 +489,7 @@ async function generateSlideExplanations(client, model, pdf) {
 }
 
 function drawWrappedText(page, font, text, x, y, maxWidth, fontSize, lineHeight, color) {
-  const words = String(text || '').split(/\\s+/).filter(Boolean);
+  const words = String(text || '').split(/\s+/).filter(Boolean);
   let line = '';
   for (const word of words) {
     const candidate = line ? `${line} ${word}` : word;
@@ -502,7 +503,7 @@ function drawWrappedText(page, font, text, x, y, maxWidth, fontSize, lineHeight,
   return y;
 }
 
-async function exportExplanationPdf(file, sourcePdf, slides) {
+async function exportExplanationPdf(file, slides) {
   const output = await PDFLib.PDFDocument.create();
   const source = await PDFLib.PDFDocument.load(await file.arrayBuffer());
   const regular = await output.embedFont(PDFLib.StandardFonts.Helvetica);
@@ -530,7 +531,7 @@ async function exportExplanationPdf(file, sourcePdf, slides) {
     y -= 22;
     y = drawWrappedText(page, regular, slide.explanation, margin, y, availableWidth, 9.5, 13, navy);
     for (const point of slide.keyPoints) {
-      y = drawWrappedText(page, regular, `• ${point}`, margin + 8, y - 3, availableWidth - 8, 9, 12, navy);
+      y = drawWrappedText(page, regular, `- ${point}`, margin + 8, y - 3, availableWidth - 8, 9, 12, navy);
     }
     for (const item of slide.terms) {
       y = drawWrappedText(page, regular, `${item.term}: ${item.meaning}`, margin + 8, y - 3, availableWidth - 8, 8.5, 11, muted);
@@ -552,7 +553,7 @@ async function processSlides(client, model) {
   const { pdf } = await loadPdf(file);
   const slides = await generateSlideExplanations(client, model, pdf);
   setStatus('Building the slide explanations PDF…', 88);
-  return [await exportExplanationPdf(file, pdf, slides)];
+  return [await exportExplanationPdf(file, slides)];
 }
 
 function renderResults(results) {
@@ -617,15 +618,6 @@ function clearKeys() {
 
 function bindEvents() {
   ui.inputTabs.forEach(tab => tab.addEventListener('click', () => switchInput(tab.dataset.inputTab)));
-ui.chooseSlidePdf.addEventListener('click', () => ui.slideFiles.click());
-ui.slideFiles.addEventListener('change', () => addSlideFile(ui.slideFiles.files?.[0]));
-ui.slideDropzone.addEventListener('dragover', event => { event.preventDefault(); ui.slideDropzone.classList.add('dragging'); });
-ui.slideDropzone.addEventListener('dragleave', () => ui.slideDropzone.classList.remove('dragging'));
-ui.slideDropzone.addEventListener('drop', event => {
-  event.preventDefault();
-  ui.slideDropzone.classList.remove('dragging');
-  addSlideFile(event.dataTransfer?.files?.[0]);
-});
   ui.fileInput.addEventListener('change', event => addFiles(event.target.files));
   ui.choosePdfs.addEventListener('click', event => { event.stopPropagation(); ui.fileInput.click(); });
   ui.dropzone.addEventListener('click', event => { if (!event.target.closest('button')) ui.fileInput.click(); });
