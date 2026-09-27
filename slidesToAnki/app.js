@@ -99,6 +99,9 @@ function updateGenerateState() {
     : ui.jsonInput.value.trim().length > 0;
   const needsAi = state.activeInput !== 'json';
   ui.generate.disabled = !hasInput || (needsAi && !apiKeys());
+  ui.generate.hidden = state.activeInput === 'slides';
+  ui.explainSlides.hidden = state.activeInput !== 'slides';
+  ui.explainSlides.disabled = state.busy || !hasInput || !apiKeys();
 }
 
 function renderModelOptions(requested = '') {
@@ -573,12 +576,17 @@ async function generate() {
     if (state.activeInput === 'pdf') {
       results = [];
       for (let i = 0; i < state.files.length; i++) results.push(await processPdf(state.files[i], i, state.files.length, client, model));
+      setStatus('Done. Your Anki download has started.', 100);
+    } else if (state.activeInput === 'slides') {
+      results = await processSlides(client, model);
+      setStatus('Done. Your explanations PDF download has started.', 100);
     } else if (state.activeInput === 'text') {
       results = await processText(client, model);
+      setStatus('Done. Your Anki download has started.', 100);
     } else {
       results = await processJson();
+      setStatus('Done. Your Anki download has started.', 100);
     }
-    setStatus('Done. Your Anki download has started.', 100);
     renderResults(results);
   } catch (error) {
     console.error(error);
@@ -645,6 +653,21 @@ ui.explainSlides.addEventListener('click', () => {
   ui.refreshModels.addEventListener('click', async () => { clearError(); try { await refreshModels(); } catch (error) { showError(error); } });
   ui.model.addEventListener('change', () => { localStorage.setItem(MODEL_STORAGE, currentModel()); updateModelMeta(); });
   ui.generate.addEventListener('click', generate);
+  ui.explainSlides.addEventListener('click', generate);
+  ui.chooseSlidePdf.addEventListener('click', event => { event.stopPropagation(); ui.slideFiles.click(); });
+  ui.slideDropzone.addEventListener('click', event => { if (!event.target.closest('button')) ui.slideFiles.click(); });
+  ui.slideDropzone.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') ui.slideFiles.click(); });
+  ui.slideFiles.addEventListener('change', () => addSlideFile(ui.slideFiles.files?.[0]));
+  ['dragenter', 'dragover'].forEach(name => ui.slideDropzone.addEventListener(name, event => { event.preventDefault(); ui.slideDropzone.classList.add('dragging'); }));
+  ['dragleave', 'drop'].forEach(name => ui.slideDropzone.addEventListener(name, event => { event.preventDefault(); ui.slideDropzone.classList.remove('dragging'); }));
+  ui.slideDropzone.addEventListener('drop', event => addSlideFile(event.dataTransfer.files?.[0]));
+  ui.slideFileList.addEventListener('click', event => {
+    if (!event.target.closest('[data-remove-slide-file]')) return;
+    state.slideFile = null;
+    ui.slideFiles.value = '';
+    ui.slideFileList.innerHTML = '<p class="muted">No slide PDF selected.</p>';
+    updateGenerateState();
+  });
 }
 
 function init() {
