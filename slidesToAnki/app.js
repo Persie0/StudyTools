@@ -648,9 +648,13 @@ async function generateLectureCards(client, model, pdf, buffer) {
     // This allows e.g. a card spanning original pages 7–10.
     groups = reconcileLectureWindowGroups(windowResults, pdf.numPages);
   }
-  const cards = [];
-  for (let index = 0; index < groups.length; index++) {
-    const group = groups[index];
+  const cards = new Array(groups.length);
+  let nextIndex = 0;
+  let completed = 0;
+  async function processNextGroup() {
+    while (nextIndex < groups.length) {
+      const index = nextIndex++;
+      const group = groups[index];
     setStatus('Teaching topic ' + (index + 1) + '/' + groups.length +
       ' from PDF pages ' + group.pages.join(', ') + '…',
       42 + (index / Math.max(1, groups.length)) * 24);
@@ -675,8 +679,8 @@ async function generateLectureCards(client, model, pdf, buffer) {
           annotationsByPage[page] = '';
         }
       }
-      cards.push({ title: group.title, pages: group.pages, textByPage,
-        annotationsByPage, tags: [] });
+      cards[index] = { title: group.title, pages: group.pages, textByPage,
+        annotationsByPage, tags: [] };
     } else {
       const prompt = [
         buildLectureExplanationPrompt({ pages: group.pages, language: ui.language.value }),
@@ -693,10 +697,16 @@ async function generateLectureCards(client, model, pdf, buffer) {
       }
       // As before, the whole-PDF group title is the actual card front;
       // the explanation cannot silently replace it.
-      cards.push({ title: group.title, pages: group.pages,
-        textByPage, explanation, tags: [] });
+      cards[index] = { title: group.title, pages: group.pages,
+        textByPage, explanation, tags: [] };
+    }
+      completed++;
+      setStatus('Processed legacy slide card ' + completed + '/' + groups.length + '…',
+        42 + (completed / Math.max(1, groups.length)) * 24);
     }
   }
+  const parallelism = Math.max(1, Math.min(50, Number(ui.legacyParallelism.value) || 10));
+  await Promise.all(Array.from({ length: Math.min(parallelism, groups.length) }, () => processNextGroup()));
   return { cards, imageBytes };
 }
 
