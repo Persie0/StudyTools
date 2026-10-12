@@ -70,7 +70,7 @@ test('blocked storage silently disables persistence, not the app', () => {
 
 test('UI wires all settings to autosave and reload restore, without persisting input content', async () => {
   const app = await readFile(new URL('../slidesToAnki/app.js', import.meta.url), 'utf8');
-  assert.match(app, /const savedSettings = loadSettings\(localStorage\)/);
+  assert.match(app, /savedSettings = loadSettings\(localStorage\)/);
   assert.match(app, /restoreSettings\(savedSettings\)/);
   assert.match(app, /saveSettings\(localStorage, captureSettings\(\)\)/);
   assert.match(app, /ui\.density, ui\.cardMode, ui\.strategy, ui\.language, ui\.includeImages, ui\.maxSourceImages/);
