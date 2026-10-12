@@ -243,6 +243,14 @@ export function legacyLectureSearchText(card) {
   ).join('').trim();
 }
 
+function renderLegacyMarkup(input) {
+  const value = String(input || '');
+  if (!/<\/?(?:p|ul|li|i|b|strong|em|br)\s*\/?>/i.test(value)) return paragraphs(value);
+  return escapeHtml(value)
+    .replace(/&lt;(\/?)(p|ul|li|i|b|strong|em|br)\s*\/?&gt;/gi, (_match, slash, tag) =>
+      '<' + slash + tag.toLowerCase() + '>');
+}
+
 export function legacyLectureImageHtml(card, media, { slideBySlide = false } = {}) {
   return card.pages.map(page => {
     const name = media.get(page);
@@ -250,24 +258,16 @@ export function legacyLectureImageHtml(card, media, { slideBySlide = false } = {
     const image = '<img src="' + escapeHtml(name) + '" alt="Slide ' + page + '">';
     const annotation = slideBySlide ? String(card.annotationsByPage?.[page] || '').trim() : '';
     return image + (annotation
-      ? '<div class="slide-annotation">' + paragraphs(annotation) + '</div>'
+      ? '<div class="slide-annotation">' + renderLegacyMarkup(annotation) + '</div>'
       : '');
   }).join('<br>');
 }
 
 export function legacyLectureExplanationHtml(explanation) {
   const normalized = normalizeLectureExplanation(explanation);
-  // Gemini can write the original simple HTML explanation, but attributes,
-  // scripts, images, links and arbitrary tags are not trusted.
-  const render = input => {
-    const value = String(input || '');
-    if (!/<\/?(?:p|ul|li|i|b|strong|em|br)\s*\/?>/i.test(value)) return paragraphs(value);
-    return escapeHtml(value)
-      .replace(/&lt;(\/?)(p|ul|li|i|b|strong|em|br)\s*\/?&gt;/gi, (_match, slash, tag) =>
-        '<' + slash + tag.toLowerCase() + '>');
-  };
-  return (normalized.overview ? render(normalized.overview) : '') +
-    render(normalized.explanation);
+  // Original simple HTML is preserved without trusting arbitrary tags or attributes.
+  return (normalized.overview ? renderLegacyMarkup(normalized.overview) : '') +
+    renderLegacyMarkup(normalized.explanation);
 }
 
 export function legacyLectureNoteFields(card, media, {
