@@ -46,6 +46,12 @@ textarea { resize:vertical; }
 /* Module state hides irrelevant controls; CSS layout must not override hidden. */
 [hidden] { display:none !important; }
 .option-check { margin-top:18px; font-size:13px; color:var(--text); }
+.legacy-lecture-options { margin-top:16px; padding:14px; border:1px solid var(--line); border-radius:12px; background:var(--surface); }
+.legacy-lecture-options .option-check { margin-top:12px; line-height:1.45; }
+.legacy-image-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:14px; }
+.legacy-image-grid > div { min-width:0; }
+.legacy-image-grid input { width:100%; }
+@media (max-width:560px) { .legacy-image-grid { grid-template-columns:1fr; } }
 .source-image-limit { display:flex; align-items:center; gap:10px; margin-top:10px; }
 .source-image-limit label { margin:0; color:var(--muted); white-space:nowrap; }
 .source-image-limit select { width:auto; padding:7px 10px; }
