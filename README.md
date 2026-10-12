@@ -7,12 +7,10 @@ Static, browser-first utilities for PDFs and Anki decks.
 `slidesToAnki/gemini-anki.html` is the primary AI workflow.
 
 - **Gemini is the default AI provider and default for every AI step.**
-- Preferred model: `gemini-3.7-flash`.
+- Preferred model: `gemini-2.5-flash` (the original PDF-to-Anki default).
 - The model selector dynamically calls Gemini `models.list`, keeps every model that exposes `generateContent`, and sorts models so the recommended/free-tier/multimodal PDF models appear first.
-- PDF strategy defaults to **Auto**:
-  1. native PDF input when the chosen model supports it; large/long PDFs are split into 40-page PDF chunks so visual document understanding is preserved without overflowing one response;
-  2. rendered page images for visual-model or per-chunk fallback;
-  3. extracted text only as a last fallback.
+- PDF strategy defaults to **Direct PDF** (the original "File" input selection): native PDF input where supported; large/long PDFs are split into 40-page PDF chunks, with a rendered-page fallback for failed chunks. **Auto**, rendered-page, and text-only processing remain available.
+- Other restored defaults: **Compact** card density (closest to original non-detailed grouping), **Topic explanations**, **Detect from source** language, embedded source pages, and **All cited** pages per card.
 - Generated cards include source page numbers.
 - Cited PDF pages can be embedded as real `.apkg` media files.
 - Multiple Gemini API keys can be entered (one per line) and rotate on temporary quota/overload errors.
