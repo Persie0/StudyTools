@@ -583,9 +583,9 @@ async function generateLectureCards(client, model, pdf, buffer) {
           throw new Error('Whole-document text grouping did not cover enough source pages.');
         }
         groups = normalizeLectureGroups(payload, 1, pdf.numPages, {
-        includeMissing: false,
-        maxPages: ui.legacyDetailedGrouping.checked ? 4 : Infinity
-      });
+          includeMissing: false,
+          maxPages: ui.legacyDetailedGrouping.checked ? 4 : Infinity
+        });
       } catch (error) {
         console.warn('Whole-document text outline failed; recovering with overlapping visual page windows.', error);
       }
@@ -655,51 +655,51 @@ async function generateLectureCards(client, model, pdf, buffer) {
     while (nextIndex < groups.length) {
       const index = nextIndex++;
       const group = groups[index];
-    setStatus('Teaching topic ' + (index + 1) + '/' + groups.length +
-      ' from PDF pages ' + group.pages.join(', ') + '…',
-      42 + (index / Math.max(1, groups.length)) * 24);
-    const groupImages = [];
-    for (const page of group.pages) {
-      groupImages.push({ mimeType: 'image/jpeg', data: bytesToBase64(await getPageJpeg(page)) });
-    }
-    if (ui.legacySlideBySlide.checked) {
-      const annotationsByPage = {};
-      for (let imageIndex = 0; imageIndex < group.pages.length; imageIndex++) {
-        const page = group.pages[imageIndex];
-        const prompt = buildLegacyLectureAnnotationPrompt({
-          page, language: ui.language.value
-        }) + '\n\n' + lectureTextContext(textByPage, [page]);
-        try {
-          const payload = await client.generateJson({
-            model, prompt, images: [groupImages[imageIndex]]
-          });
-          annotationsByPage[page] = String(payload?.annotation || '').trim();
-        } catch (error) {
-          console.warn('Optional annotation for slide ' + page + ' failed.', error);
-          annotationsByPage[page] = '';
+      setStatus('Teaching topic ' + (index + 1) + '/' + groups.length +
+        ' from PDF pages ' + group.pages.join(', ') + '…',
+        42 + (index / Math.max(1, groups.length)) * 24);
+      const groupImages = [];
+      for (const page of group.pages) {
+        groupImages.push({ mimeType: 'image/jpeg', data: bytesToBase64(await getPageJpeg(page)) });
+      }
+      if (ui.legacySlideBySlide.checked) {
+        const annotationsByPage = {};
+        for (let imageIndex = 0; imageIndex < group.pages.length; imageIndex++) {
+          const page = group.pages[imageIndex];
+          const prompt = buildLegacyLectureAnnotationPrompt({
+            page, language: ui.language.value
+          }) + '\n\n' + lectureTextContext(textByPage, [page]);
+          try {
+            const payload = await client.generateJson({
+              model, prompt, images: [groupImages[imageIndex]]
+            });
+            annotationsByPage[page] = String(payload?.annotation || '').trim();
+          } catch (error) {
+            console.warn('Optional annotation for slide ' + page + ' failed.', error);
+            annotationsByPage[page] = '';
+          }
         }
+        cards[index] = { title: group.title, pages: group.pages, textByPage,
+          annotationsByPage, tags: [] };
+      } else {
+        const prompt = [
+          buildLectureExplanationPrompt({ pages: group.pages, language: ui.language.value }),
+          lectureTextContext(textByPage, group.pages)
+        ].join('\n\n');
+        let explanation;
+        try {
+          explanation = normalizeLectureExplanation(
+            await client.generateJson({ model, prompt, images: groupImages })
+          );
+        } catch (error) {
+          throw new Error('Could not generate a teaching explanation for pages ' +
+            group.pages.join(', ') + ': ' + (error?.message || error));
+        }
+        // As before, the whole-PDF group title is the actual card front;
+        // the explanation cannot silently replace it.
+        cards[index] = { title: group.title, pages: group.pages,
+          textByPage, explanation, tags: [] };
       }
-      cards[index] = { title: group.title, pages: group.pages, textByPage,
-        annotationsByPage, tags: [] };
-    } else {
-      const prompt = [
-        buildLectureExplanationPrompt({ pages: group.pages, language: ui.language.value }),
-        lectureTextContext(textByPage, group.pages)
-      ].join('\n\n');
-      let explanation;
-      try {
-        explanation = normalizeLectureExplanation(
-          await client.generateJson({ model, prompt, images: groupImages })
-        );
-      } catch (error) {
-        throw new Error('Could not generate a teaching explanation for pages ' +
-          group.pages.join(', ') + ': ' + (error?.message || error));
-      }
-      // As before, the whole-PDF group title is the actual card front;
-      // the explanation cannot silently replace it.
-      cards[index] = { title: group.title, pages: group.pages,
-        textByPage, explanation, tags: [] };
-    }
       completed++;
       setStatus('Processed legacy slide card ' + completed + '/' + groups.length + '…',
         42 + (completed / Math.max(1, groups.length)) * 24);
