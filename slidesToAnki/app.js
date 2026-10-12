@@ -19,6 +19,7 @@ import {
   safeDeckName,
   stableNumericId
 } from './lib/anki-utils.js';
+import { loadSettings, saveSettings } from './lib/settings.js';
 
 const PDF_INLINE_LIMIT = 50 * 1024 * 1024;
 const PDF_INLINE_SAFETY_LIMIT = 47 * 1024 * 1024;
@@ -28,6 +29,7 @@ const DIRECT_PDF_PAGE_LIMIT = 80;
 const TEXT_CHUNK_LIMIT = 48_000;
 const API_KEY_STORAGE = 'studytoolsGeminiKeysV2';
 const MODEL_STORAGE = 'studytoolsGeminiModelV2';
+const REMEMBER_KEY_STORAGE = 'studytoolsRememberGeminiKeysV1';
 
 const $ = id => document.getElementById(id);
 const ui = {
@@ -86,6 +88,33 @@ function apiKeys() {
 
 function currentModel() {
   return normalizeModelId(ui.model.value || DEFAULT_MODEL);
+}
+
+function captureSettings() {
+  return {
+    model: currentModel(),
+    density: ui.density.value,
+    cardMode: ui.cardMode.value,
+    strategy: ui.strategy.value,
+    language: ui.language.value,
+    includeImages: ui.includeImages.checked,
+    maxSourceImages: ui.maxSourceImages.value,
+    activeInput: state.activeInput
+  };
+}
+
+function persistSettings() {
+  saveSettings(localStorage, captureSettings());
+}
+
+function restoreSettings(saved) {
+  if (!saved) return;
+  ui.density.value = saved.density;
+  ui.cardMode.value = saved.cardMode;
+  ui.strategy.value = saved.strategy;
+  ui.language.value = saved.language;
+  ui.includeImages.checked = saved.includeImages;
+  ui.maxSourceImages.value = saved.maxSourceImages;
 }
 
 function updateGenerateState() {
@@ -154,6 +183,7 @@ function switchInput(input) {
   for (const panel of ui.inputPanels) panel.hidden = panel.dataset.inputPanel !== state.activeInput;
   document.body.dataset.inputMode = state.activeInput;
   updateGenerateState();
+  persistSettings();
 }
 
 function addFiles(fileList) {
@@ -571,7 +601,7 @@ async function generate() {
   ui.results.innerHTML = '';
   try {
     const model = currentModel();
-    localStorage.setItem(MODEL_STORAGE, model);
+    persistSettings();
     const client = state.activeInput === 'json' ? null : new GeminiClient(apiKeys());
     let results;
     if (state.activeInput === 'pdf') {
@@ -598,20 +628,29 @@ async function generate() {
   }
 }
 
-function saveKeys() {
-  if (!ui.rememberKeys.checked) {
-    localStorage.removeItem(API_KEY_STORAGE);
-    setStatus('Key saving is off. Keys stay only in this tab.', 0);
-    return;
+function saveKeys(announce = true) {
+  try {
+    if (!ui.rememberKeys.checked) {
+      localStorage.removeItem(API_KEY_STORAGE);
+      localStorage.removeItem(REMEMBER_KEY_STORAGE);
+      if (announce) setStatus('Key saving is off. Keys stay only in this tab.', 0);
+      return;
+    }
+    localStorage.setItem(REMEMBER_KEY_STORAGE, 'true');
+    localStorage.setItem(API_KEY_STORAGE, apiKeys());
+    if (announce) setStatus('Gemini keys saved in this browser only.', 0);
+  } catch (_) {
+    if (announce) setStatus('Browser storage is unavailable; keys remain in this tab.', 0);
   }
-  localStorage.setItem(API_KEY_STORAGE, apiKeys());
-  setStatus('Gemini keys saved in this browser only.', 0);
 }
 
 function clearKeys() {
   ui.apiKeys.value = '';
   ui.rememberKeys.checked = false;
-  localStorage.removeItem(API_KEY_STORAGE);
+  try {
+    localStorage.removeItem(API_KEY_STORAGE);
+    localStorage.removeItem(REMEMBER_KEY_STORAGE);
+  } catch (_) {}
   updateGenerateState();
   setStatus('Saved Gemini keys cleared.', 0);
 }
@@ -632,18 +671,17 @@ function bindEvents() {
     renderFiles();
     updateGenerateState();
   });
-  ui.apiKeys.addEventListener('input', updateGenerateState);
+  ui.apiKeys.addEventListener('input', () => { updateGenerateState(); if (ui.rememberKeys.checked) saveKeys(false); });
+  ui.rememberKeys.addEventListener('change', () => saveKeys());
   ui.apiKeys.addEventListener('change', () => { if (apiKeys()) refreshModels().catch(error => console.warn('Model discovery failed; using curated fallback list.', error)); });
   ui.textInput.addEventListener('input', updateGenerateState);
   ui.jsonInput.addEventListener('input', updateGenerateState);
-ui.explainSlides.addEventListener('click', () => {
-  switchInput('slides');
-  if (state.slideFile) runGeneration();
-});
-  ui.saveKeys.addEventListener('click', saveKeys);
+  ui.saveKeys.addEventListener('click', () => saveKeys());
   ui.clearKeys.addEventListener('click', clearKeys);
   ui.refreshModels.addEventListener('click', async () => { clearError(); try { await refreshModels(); } catch (error) { showError(error); } });
-  ui.model.addEventListener('change', () => { localStorage.setItem(MODEL_STORAGE, currentModel()); updateModelMeta(); });
+  ui.model.addEventListener('change', () => { updateModelMeta(); persistSettings(); });
+  [ui.density, ui.cardMode, ui.strategy, ui.language, ui.includeImages, ui.maxSourceImages]
+    .forEach(control => control.addEventListener('change', persistSettings));
   ui.generate.addEventListener('click', generate);
   ui.explainSlides.addEventListener('click', generate);
   ui.chooseSlidePdf.addEventListener('click', event => { event.stopPropagation(); ui.slideFiles.click(); });
@@ -664,15 +702,19 @@ ui.explainSlides.addEventListener('click', () => {
 
 function init() {
   const savedKeys = localStorage.getItem(API_KEY_STORAGE) || '';
-  if (savedKeys) { ui.apiKeys.value = savedKeys; ui.rememberKeys.checked = true; }
-  state.models = mergeModelLists([], fallbackModelList());
-  renderModelOptions();
+  ui.rememberKeys.checked = localStorage.getItem(REMEMBER_KEY_STORAGE) === 'true' || Boolean(savedKeys);
+  if (savedKeys) ui.apiKeys.value = savedKeys;
+  const savedSettings = loadSettings(localStorage);
+  restoreSettings(savedSettings);
+  const storedModel = savedSettings?.model || localStorage.getItem(MODEL_STORAGE) || DEFAULT_MODEL;
+  state.models = mergeModelLists([{ id: storedModel, name: `models/${storedModel}` }], fallbackModelList());
+  renderModelOptions(storedModel);
   renderFiles();
   bindEvents();
 
   const params = new URLSearchParams(location.search);
   if (params.get('mode') === 'topics') ui.cardMode.value = 'topics';
-  switchInput(params.get('input') || 'pdf');
+  switchInput(params.get('input') || savedSettings?.activeInput || 'pdf');
   updateGenerateState();
   if (savedKeys) refreshModels().catch(error => console.warn('Model discovery failed; using curated fallback list.', error));
 }
