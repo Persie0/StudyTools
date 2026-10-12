@@ -13,7 +13,11 @@ import {
   buildLectureGroupingPrompt,
   buildLectureExplanationPrompt,
   normalizeLectureExplanation,
-  lectureBackHtml
+  legacyLectureNoteFields,
+  legacyLectureSearchText,
+  legacyLectureImageHtml,
+  legacyLectureExplanationHtml,
+  buildLegacyLectureAnnotationPrompt
 } from '../slidesToAnki/lib/lecture-notes.js';
 import { normalizeSettings } from '../slidesToAnki/lib/settings.js';
 
@@ -55,8 +59,8 @@ test('lecture prompts require full coverage, multimodal reasoning and thorough e
   assert.match(grouping, /24 through 29/);
   assert.match(grouping, /contiguous/i);
   const explaining = buildLectureExplanationPrompt({ pages: [24, 25], language: 'German' });
-  for (const phrase of ['EVERY supplied original PDF page', 'equations', 'diagrams', 'misconceptions', 'ORIGINAL page number', 'substantial']) {
-    assert.ok(explaining.includes(phrase), 'Missing deep explanation prompt guidance: ' + phrase);
+  for (const phrase of ['ENTIRE group', 'formulas', 'diagrams', '<p>', 'Anki MathJax', 'German']) {
+    assert.ok(explaining.includes(phrase), 'Missing original group explanation guidance: ' + phrase);
   }
 });
 
@@ -74,62 +78,114 @@ test('lecture explanation validation requires real content, preserves substantia
   assert.deepEqual(detail.keyPoints, ['Point A']);
 });
 
-test('Anki backs place ALL original images before full PDF text and AI explanation', () => {
-  const pdfText = 'First part\nSecond part <tag> & "quoted"';
+
+test('legacy note fields match the pre-redesign five-field structure', () => {
   const card = {
+    title: 'Topic <A>',
     pages: [3, 4],
-    textByPage: { 3: pdfText, 4: 'Text from page four' },
-    explanation: { overview: 'Overview', explanation: 'Why it matters.\n\nWorked example.', keyPoints: ['Remember this'] }
+    textByPage: { 3: 'First part\nSecond part <tag> & "quoted"', 4: 'Text from page four' },
+    explanation: { explanation: '<p>Reason <b>important</b>.</p><ul><li>Consequence</li></ul>' }
   };
-  const html = lectureBackHtml(card, new Map([[3, 'source3.jpg'], [4, 'source4.jpg']]));
-  const firstImage = html.indexOf('source3.jpg');
-  const secondImage = html.indexOf('source4.jpg');
-  const fullText = html.indexOf('Full extracted PDF text');
-  const deep = html.indexOf('Detailed explanation');
-  assert.ok(firstImage >= 0 && firstImage < secondImage && secondImage < fullText && fullText < deep);
-  assert.ok(html.includes('First part\nSecond part'));
-  assert.ok(html.includes('Text from page four'));
-  assert.ok(html.includes('&lt;tag&gt; &amp; &quot;quoted&quot;'));
-  assert.ok(html.includes('Why it matters.') && html.includes('Worked example.'));
+  const media = new Map([[3, 'source3.jpg'], [4, 'source4.jpg']]);
+  const fields = legacyLectureNoteFields(card, media, { order: '1230001', includeText: true });
+  assert.equal(fields.length, 5);
+  const [order, front, back, backContent, searchText] = fields;
+  assert.equal(order, '1230001');
+  assert.equal(front, 'Topic &lt;A&gt;');
+  assert.ok(back.includes('source3.jpg') && back.includes('source4.jpg'));
+  assert.ok(back.indexOf('source3.jpg') < back.indexOf('source4.jpg'));
+  assert.ok(!back.includes('First part') && !back.includes('Reason'));
+  assert.match(backContent, /<p>Reason <b>important<\/b>\.<\/p>/);
+  assert.ok(!backContent.includes('First part') && !backContent.includes('Full extracted PDF text'));
+  assert.ok(searchText.includes('First part\nSecond part &lt;tag&gt; &amp; &quot;quoted&quot;'));
+  assert.ok(searchText.includes('Text from page four'));
+  assert.ok(searchText.includes('--- Slide (Page 3) ---'));
 });
 
-test('Anki back renderer keeps images for every page even if extractable text is missing', () => {
+test('search text can be disabled without affecting visual card answers', () => {
+  const card = { title: 'Concept', pages: [1], textByPage: { 1: 'Secret searchable text' },
+    explanation: { explanation: 'Explained.' } };
+  const media = new Map([[1, 'slide1.jpg']]);
+  const included = legacyLectureNoteFields(card, media, { includeText: true });
+  const excluded = legacyLectureNoteFields(card, media, { includeText: false });
+  assert.deepEqual(included.slice(0, 4), excluded.slice(0, 4));
+  assert.equal(excluded[4], '');
+  assert.ok(included[4].includes('Secret searchable text'));
+});
+
+test('slide-by-slide version annotates images individually and leaves BackContent empty', () => {
   const card = {
-    pages: [12],
-    textByPage: { 12: '' },
-    explanation: { explanation: 'Visual explanation' }
+    title: 'Mechanism', pages: [1, 2],
+    annotationsByPage: { 1: '', 2: 'A useful clarification' },
+    textByPage: { 1: 'Text1', 2: 'Text2' }
   };
-  const html = lectureBackHtml(card, new Map([[12, 'page12.jpg']]));
-  assert.ok(html.includes('No selectable PDF text'));
-  assert.ok(html.includes('Visual explanation'));
-  assert.throws(() => lectureBackHtml(card, new Map()), /Source image/);
+  const fields = legacyLectureNoteFields(card, new Map([[1, 'slide1.jpg'], [2, 'slide2.jpg']]),
+    { slideBySlide: true, includeText: true });
+  assert.equal(fields[3], '');
+  assert.ok(fields[2].indexOf('slide1.jpg') < fields[2].indexOf('slide2.jpg'));
+  assert.ok(fields[2].includes('<div class="slide-annotation">'));
+  assert.ok(fields[2].includes('A useful clarification'));
+  assert.ok(fields[4].includes('Text1') && fields[4].includes('Text2'));
+  assert.match(buildLegacyLectureAnnotationPrompt({ page: 2 }), /self-explanatory/);
 });
 
-test('lecture notes render PDF and model text escaped rather than executable HTML', () => {
-  const html = lectureBackHtml({
-    pages: [1],
-    textByPage: { 1: '<script>window.fail = true</script>' },
-    explanation: { explanation: '<img src=x onerror=alert(1)>', keyPoints: ['<b>raw</b>'] }
-  }, new Map([[1, 'safe.jpg']]));
+test('original group HTML formatting is supported without allowing executable content', () => {
+  const html = legacyLectureExplanationHtml({
+    explanation: '<p>Valid <b>bold</b> and <i>italic</i>.</p><script>alert(1)</script><img src=x onerror=alert(2)>'
+  });
+  assert.ok(html.includes('<p>Valid <b>bold</b> and <i>italic</i>.</p>'));
   assert.ok(html.includes('&lt;script&gt;'));
   assert.ok(html.includes('&lt;img'));
-  assert.ok(html.includes('&lt;b&gt;'));
   assert.equal(html.includes('<script>'), false);
 });
 
-test('app routes PDF lecture mode to separate visual grouping and Anki export', async () => {
+test('original grouping permits intentional skipping and longer sections when detailed grouping is off', () => {
+  const proposed = { groups: [
+    { title: 'Real topic', pages: [2, 3, 4, 5, 6, 7] },
+    { title: 'Second', pages: [9] }
+  ] };
+  const normalized = normalizeLectureGroups(proposed, 1, 10,
+    { includeMissing: false, maxPages: Infinity });
+  assert.deepEqual(normalized.map(x => x.pages), [[2, 3, 4, 5, 6, 7], [9]]);
+  const detailed = normalizeLectureGroups(proposed, 1, 10,
+    { includeMissing: false, maxPages: 4 });
+  assert.deepEqual(detailed.map(x => x.pages), [[2, 3, 4, 5], [6, 7], [9]]);
+  const prompt = buildWholeDocumentLectureGroupingPrompt({ pageCount: 10, detailedGrouping: true });
+  assert.match(prompt, /DETAILED GROUPING/);
+  assert.match(prompt, /REMOVE only genuinely content-free/);
+});
+
+test('legacy grouping retains a single card when middle reveal slides are deliberately omitted', () => {
+  const original = normalizeLectureGroups({ groups: [
+    { title: 'Topic with hidden incremental pages', pages: [2, 5, 7] }
+  ] }, 1, 8, { includeMissing: false, maxPages: Infinity });
+  assert.deepEqual(original, [{ title: 'Topic with hidden incremental pages', pages: [2, 5, 7] }]);
+  assert.equal(isUsableLectureOutline({ groups: [{ pages: [2, 5, 7] }] }, 8, 0.3), true);
+});
+
+test('app routes PDF legacy mode into original searchable five-field Anki export', async () => {
   const app = await readFile(new URL('../slidesToAnki/app.js', import.meta.url), 'utf8');
   const html = await readFile(new URL('../slidesToAnki/gemini-anki.html', import.meta.url), 'utf8');
   assert.match(html, /value="lecture"/);
-  assert.match(app, /ui\.cardMode\.value === 'lecture'/);
+  assert.match(html, /id="legacy-include-text"/);
+  assert.match(html, /id="legacy-slide-by-slide"/);
   assert.match(app, /await generateLectureCards\(client, model, pdf, buffer\)/);
   assert.match(app, /forceAll: lecture/);
-  assert.match(app, /lectureBackHtml\(card, media\)/);
+  assert.match(app, /legacyLectureNoteFields\(card, media/);
+  assert.match(app, /ui\.legacyIncludeText\.checked/);
+  assert.match(app, /ui\.legacySlideBySlide\.checked/);
+  assert.match(app, /ui\.legacyDetailedGrouping\.checked/);
   assert.match(app, /imageCache\?\.get\(page\)/);
   assert.match(app, /extractLecturePageText\(pdf, page\)/);
   assert.match(app, /control\.disabled = lectureMode/);
+  const legacy = app.slice(app.indexOf('function lectureAnkiModel()'), app.indexOf('async function createDeck('));
+  for (const field of ['Order', 'Front', 'Back', 'BackContent', 'Text']) {
+    assert.ok(legacy.includes("name: '" + field + "'"));
+  }
+  assert.ok(legacy.includes("qfmt: '{{Front}}'"));
+  assert.ok(legacy.includes('{{Back}}<br><div class="back-content">{{BackContent}}</div>'));
+  assert.ok(!legacy.includes('{{Text}}'), 'search field must never be visible on the card');
 });
-
 test('overlapping windows keep every adjacent pair in at least one visual request', () => {
   for (const count of [1, 4, 8, 9, 12, 13, 17, 51, 100]) {
     const windows = lectureGroupingWindows(count);
@@ -220,9 +276,9 @@ test('window prompt recognizes continuing topics and avoids invented hard batch 
 test('the first grouping analysis sees the entire original PDF rather than 8-page chunks', () => {
   const prompt = buildWholeDocumentLectureGroupingPrompt({ pageCount: 48, language: 'German' });
   assert.match(prompt, /ENTIRE attached lecture PDF/);
-  assert.match(prompt, /ALL 48 original PDF pages/);
+  assert.match(prompt, /1-based page numbers from 1 to 48/);
   assert.match(prompt, /pages 8 and 9/);
-  assert.match(prompt, /natural concept transitions/);
+  assert.match(prompt, /ORIGINAL GROUPING/);
   assert.match(prompt, /Write titles in German/);
   assert.ok(prompt.includes(String.fromCharCode(10)), 'instructions must have readable real newlines');
 });
@@ -242,7 +298,7 @@ test('whole-PDF analysis is primary and overlapping image windows are fallback o
   const window = app.indexOf('const windows = lectureGroupingWindows(pdf.numPages)', app.indexOf('async function generateLectureCards('));
   assert.ok(primary >= 0 && primary < text && text < window, 'whole PDF should be tried before text and windows');
   assert.match(app, /if \(!groups\) \{\s*const windows = lectureGroupingWindows/);
-  assert.match(app, /isUsableLectureOutline\(payload, pdf\.numPages\)/);
+  assert.match(app, /isUsableLectureOutline\(payload, pdf\.numPages, 0\.3\)/);
   assert.match(app, /pdfBase64: arrayBufferToBase64\(buffer\)/);
   assert.match(app, /buffer\.byteLength <= PDF_INLINE_SAFETY_LIMIT/);
 });

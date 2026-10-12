@@ -88,7 +88,7 @@ export function reconcileLectureWindowGroups(windows, pageCount) {
 
 
 // AI-proposed grouping is advisory: every original page appears exactly once.
-export function normalizeLectureGroups(payload, start, end) {
+export function normalizeLectureGroups(payload, start, end, { includeMissing = true, maxPages = LECTURE_GROUP_MAX_PAGES } = {}) {
   const raw = Array.isArray(payload) ? payload :
     Array.isArray(payload?.groups) ? payload.groups :
     Array.isArray(payload?.sections) ? payload.sections : [];
@@ -98,6 +98,18 @@ export function normalizeLectureGroups(payload, start, end) {
     const title = String(item?.title || item?.name || '').trim().slice(0, 180);
     const pages = normalizePages(item?.pages, end)
       .filter(page => page >= start && page <= end && !assigned.has(page));
+    if (!includeMissing) {
+      // Original AI Slides groups may intentionally skip intermediate builds
+      // or administrative pages. Keep the remaining non-contiguous images in
+      // ONE conceptual card instead of splitting at every omitted page.
+      const chunkSize = Number.isFinite(maxPages) ? Math.max(1, maxPages) : pages.length || 1;
+      for (let offset = 0; offset < pages.length; offset += chunkSize) {
+        proposed.push({ title: title || 'Pages ' + pages.join(', '),
+          pages: pages.slice(offset, offset + chunkSize) });
+      }
+      for (const page of pages) assigned.add(page);
+      continue;
+    }
     let run = [];
     const flush = () => {
       if (!run.length) return;
@@ -105,22 +117,25 @@ export function normalizeLectureGroups(payload, start, end) {
       run = [];
     };
     for (const page of pages) {
-      if (run.length && (page !== run[run.length - 1] + 1 || run.length >= LECTURE_GROUP_MAX_PAGES)) flush();
+      if (run.length && (page !== run[run.length - 1] + 1 || run.length >= maxPages)) flush();
       run.push(page);
       assigned.add(page);
     }
     flush();
   }
-  // Never silently omit content that the AI failed to classify.
-  for (let page = start; page <= end; page++) {
-    if (!assigned.has(page)) proposed.push({ title: 'Page ' + page, pages: [page] });
+  // Normal modes retain every page; legacy mode intentionally skips non-content
+  // slides and intermediate reveal frames when the whole-PDF model filters them.
+  if (includeMissing) {
+    for (let page = start; page <= end; page++) {
+      if (!assigned.has(page)) proposed.push({ title: 'Page ' + page, pages: [page] });
+    }
   }
   return proposed.sort((a, b) => a.pages[0] - b.pages[0]);
 }
 
 // Reject empty or severely incomplete whole-document outlines so one weak AI
 // response does not produce dozens of isolated fallback pages without context.
-export function isUsableLectureOutline(payload, pageCount) {
+export function isUsableLectureOutline(payload, pageCount, minCoverage = 0.7) {
   const total = Math.max(1, Math.floor(Number(pageCount) || 1));
   const raw = Array.isArray(payload) ? payload :
     Array.isArray(payload?.groups) ? payload.groups :
@@ -130,12 +145,12 @@ export function isUsableLectureOutline(payload, pageCount) {
   for (const item of raw) {
     for (const page of normalizePages(item?.pages, total)) covered.add(page);
   }
-  return covered.size >= Math.ceil(total * 0.7);
+  return covered.size >= Math.ceil(total * minCoverage);
 }
 
 // Prefer one document-wide outline, just like the original slides-to-Anki
 // workflow. Fixed-size image windows are a fallback, not semantic boundaries.
-export function buildWholeDocumentLectureGroupingPrompt({ pageCount, language = 'auto' }) {
+export function buildWholeDocumentLectureGroupingPrompt({ pageCount, language = 'auto', detailedGrouping = false } = {}) {
   const count = Math.max(1, Math.floor(Number(pageCount) || 1));
   const languageRule = language === 'auto'
     ? 'Write titles in the primary language of the PDF.' : 'Write titles in ' + language + '.';
@@ -144,11 +159,15 @@ export function buildWholeDocumentLectureGroupingPrompt({ pageCount, language = 
     'Identify the logical outline, continuity between neighboring slides, incremental reveals and transitions between topics.',
     'Return groups of consecutive ORIGINAL PDF pages representing focused concepts or closely related explanations.',
     'No fixed-size processing boundaries exist: adjacent pages (including pages 8 and 9, 16 and 17, etc.) may belong together.',
-    'Prefer small cohesive groups of 1–4 pages. Longer topics should be divided at natural concept transitions, not at arbitrary page numbers.',
+    detailedGrouping
+      ? 'Use DETAILED GROUPING: small, focused groups of 1–4 slides, each covering one or two key concepts. Split longer topics at concept transitions.'
+      : 'Use ORIGINAL GROUPING: group all consecutive slides that cover one coherent topic. Do not split solely to fit 4 pages.',
     'Each group needs a concise, descriptive title suitable for the front of an Anki card.',
     'Use all substantive slide content, including diagrams, formula-heavy pages, conclusions and summaries.',
-    'Cover ALL ' + count + ' original PDF pages exactly once in ascending order. Include title, divider and agenda pages with a neighboring group where practical rather than discarding them.',
-    'Do not skip or repeat pages, and use ORIGINAL 1-based page numbers from 1 to ' + count + '.',
+    'As in the original converter, REMOVE only genuinely content-free title, agenda, section-divider, acknowledgements and thank-you slides.',
+    'For incremental reveal slides of the SAME concept, retain only the final/most complete visual slide in the pages list.',
+    'Do not discard substantive summaries, explanations, conclusions or diagram pages. Do not skip useful learning material.',
+    'Do not repeat included page numbers, and use ORIGINAL 1-based page numbers from 1 to ' + count + '.',
     languageRule,
     'Return strictly valid JSON only:',
     '{"groups":[{"title":"First concept","pages":[1,2]},{"title":"Next concept","pages":[3,4]}]}',
@@ -178,24 +197,19 @@ export function buildLectureGroupingPrompt({ start, end, language = 'auto' }) {
 
 export function buildLectureExplanationPrompt({ pages, language = 'auto' }) {
   const languageRule = language === 'auto'
-    ? 'Write in the primary language of the slides.' : 'Write in ' + language + '.';
+    ? 'Write in the same language as the slides.' : 'Write in ' + language + '.';
   return [
-    'Write comprehensive but understandable lecture study notes from the attached slide images.',
-    'Explain EVERY supplied original PDF page: ' + pages.join(', ') + '. Images appear in ascending page order.',
-    'Go significantly beyond merely copying or describing slide text. Explain what concepts MEAN, WHY they work and HOW ideas connect.',
-    'Cover all substantive bullet points, diagrams, labels, tables, equations and examples rather than a few highlights.',
-    'For graphs and diagrams, interpret axes, units, arrows, components, patterns and relationships.',
-    'For equations, explain every symbol, relevant units, assumptions, intuition, use cases and an illustrative worked example where appropriate.',
-    'Teach the steps and causal reasoning, define new terms, explain connections across pages and add valuable context without inventing facts.',
-    'Identify exam-worthy takeaways, applications and common misconceptions. State uncertainty when information is unreadable.',
-    'Explain every page separately with an explicit heading containing its ORIGINAL page number (e.g. Page 24), then discuss how the pages connect.',
-    'Write detailed connected paragraphs, not only a short bullet list. Keep the explanation substantial and accurate.',
-    'Use JSON-escaped LaTeX/MathJax and escaped newlines for paragraph breaks.',
+    'You are teaching the content of a grouped set of lecture slides to a student, as in the original slides-to-Anki app.',
+    'The attached images belong to original PDF pages ' + pages.join(', ') + '.',
+    'Write one clear, comprehensive, well-structured explanation for the ENTIRE group rather than separate page-by-page notes.',
+    'Do not just repeat the bullet points. Explain the ideas, why they work, context and relationships between the slides.',
+    'Include relevant explanation of formulas, diagrams, key terms, examples and assumptions.',
+    'The original slide text appears below as context; consider slide images when interpreting drawings and charts.',
+    'Use simple HTML tags <p>, <ul>, <li>, <b> and <i> to structure and emphasize your explanation.',
+    'For math use Anki MathJax delimiters \\(...\\) and \\[...\\], not dollar-sign delimiters.',
     languageRule,
-    'Original extracted PDF text follows as a supplement to the images; inspect visuals directly.',
-    'Return strictly valid JSON only:',
-    '{"title":"precise concept title","overview":"short orientation","explanation":"Explain every original page in detailed, separate paragraphs","keyPoints":["important point"],"examples":["short illustrative example"],"pitfalls":["common misconception"]}',
-    'Do not omit any substantive material from the supplied pages.'
+    'Respond with strictly valid JSON. Backslashes inside JSON strings must be escaped.',
+    '{"explanation":"<p>Full group explanation using simple HTML and Anki MathJax</p>"}'
   ].join('\n');
 }
 
@@ -220,33 +234,66 @@ function paragraphs(value) {
     .map(part => '<p>' + escapeHtml(part).replace(/\n/g, '<br>') + '</p>').join('');
 }
 
-export function lectureBackHtml(card, media) {
-  const slideImages = card.pages.map(page => {
+// Original (pre-redesign) note layout. The "Text" field is intentionally NOT
+// referenced in qfmt or afmt: Anki can search it in the collection browser,
+// but studying the card shows just the topic, slides and explanation.
+export function legacyLectureSearchText(card) {
+  return card.pages.map(page =>
+    '\n--- Slide (Page ' + page + ') ---\n' + String(card.textByPage?.[page] || '')
+  ).join('').trim();
+}
+
+function renderLegacyMarkup(input) {
+  const value = String(input || '');
+  if (!/<\/?(?:p|ul|li|i|b|strong|em|br)\s*\/?>/i.test(value)) return paragraphs(value);
+  return escapeHtml(value)
+    .replace(/&lt;(\/?)(p|ul|li|i|b|strong|em|br)\s*\/?&gt;/gi, (_match, slash, tag) =>
+      '<' + slash + tag.toLowerCase() + '>');
+}
+
+export function legacyLectureImageHtml(card, media, { slideBySlide = false } = {}) {
+  return card.pages.map(page => {
     const name = media.get(page);
     if (!name) throw new Error('Source image for PDF page ' + page + ' is missing from the Anki package.');
-    return '<figure class="lecture-page"><figcaption>PDF page ' + page +
-      '</figcaption><img src="' + escapeHtml(name) + '" alt="PDF page ' + page + '"></figure>';
-  }).join('');
-  const pageText = card.pages.map(page => {
-    const original = card.textByPage?.[page] || '';
-    return '<div class="lecture-page-text"><h4>Page ' + page +
-      '</h4><div class="lecture-verbatim">' +
-      (original.trim() ? escapeHtml(original) : '<em>No selectable PDF text on this page; see its image above.</em>') +
-      '</div></div>';
-  }).join('');
-  const explanation = normalizeLectureExplanation(card.explanation);
-  const section = (title, values) => values.length
-    ? '<section class="lecture-notes-section"><h3>' + title + '</h3><ul>' +
-      values.map(v => '<li>' + escapeHtml(v) + '</li>').join('') + '</ul></section>' : '';
+    const image = '<img src="' + escapeHtml(name) + '" alt="Slide ' + page + '">';
+    const annotation = slideBySlide ? String(card.annotationsByPage?.[page] || '').trim() : '';
+    return image + (annotation
+      ? '<div class="slide-annotation">' + renderLegacyMarkup(annotation) + '</div>'
+      : '');
+  }).join('<br>');
+}
+
+export function legacyLectureExplanationHtml(explanation) {
+  const normalized = normalizeLectureExplanation(explanation);
+  // Original simple HTML is preserved without trusting arbitrary tags or attributes.
+  return (normalized.overview ? renderLegacyMarkup(normalized.overview) : '') +
+    renderLegacyMarkup(normalized.explanation);
+}
+
+export function legacyLectureNoteFields(card, media, {
+  order = '',
+  includeText = true,
+  slideBySlide = false
+} = {}) {
   return [
-    '<section class="lecture-source-images"><h3>Original slides</h3>' + slideImages + '</section>',
-    '<section class="lecture-source-text"><h3>Full extracted PDF text</h3>' + pageText + '</section>',
-    '<section class="lecture-explanation"><h3>Detailed explanation</h3>',
-    explanation.overview ? '<div class="lecture-overview">' + paragraphs(explanation.overview) + '</div>' : '',
-    paragraphs(explanation.explanation),
-    '</section>',
-    section('Key points to remember', explanation.keyPoints),
-    section('Examples and applications', explanation.examples),
-    section('Common mistakes', explanation.pitfalls)
-  ].join('');
+    String(order),
+    escapeHtml(card.title),
+    legacyLectureImageHtml(card, media, { slideBySlide }),
+    slideBySlide ? '' : legacyLectureExplanationHtml(card.explanation),
+    includeText ? escapeHtml(legacyLectureSearchText(card)) : ''
+  ];
+}
+
+export function buildLegacyLectureAnnotationPrompt({ page, language = 'auto' } = {}) {
+  const languageRule = language === 'auto'
+    ? 'Respond in the language of this slide.' : 'Respond in ' + language + '.';
+  return [
+    'You are annotating a single slide for an Anki flashcard, matching the original slide-by-slide feature.',
+    'Original PDF page ' + page + ' is attached as an image, together with its extracted text.',
+    'If the slide is self-explanatory, return an empty annotation.',
+    'If it has only keywords, formulas, an unexplained diagram or incomplete context, briefly clarify the essential ideas.',
+    'Explain the math with Anki-compatible MathJax when applicable.',
+    languageRule,
+    'Return JSON only: {"annotation":"brief optional clarification"}'
+  ].join('\n');
 }

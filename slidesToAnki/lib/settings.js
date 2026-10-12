@@ -18,6 +18,14 @@ export const DEFAULT_SETTINGS = Object.freeze({
   language: 'auto',
   includeImages: true,
   maxSourceImages: 'all',
+  legacyIncludeText: true,
+  legacyDetailedGrouping: false,
+  legacySlideBySlide: false,
+  legacyCompressImages: true,
+  legacyAutoCrop: false,
+  legacyMaxResolution: 1800,
+  legacyMaxKB: 500,
+  legacyParallelism: 10,
   activeInput: 'pdf',
   model: 'gemini-2.5-flash'
 });
@@ -29,6 +37,14 @@ export function normalizeSettings(value) {
     if (allowed.includes(candidate[key])) result[key] = candidate[key];
   }
   if (typeof candidate.includeImages === 'boolean') result.includeImages = candidate.includeImages;
+  for (const setting of ['legacyIncludeText', 'legacyDetailedGrouping', 'legacySlideBySlide', 'legacyCompressImages', 'legacyAutoCrop']) {
+    if (typeof candidate[setting] === 'boolean') result[setting] = candidate[setting];
+  }
+  for (const [key, min, max] of [['legacyMaxResolution', 300, 4000], ['legacyMaxKB', 50, 10000], ['legacyParallelism', 1, 50]]) {
+    if (Number.isInteger(candidate[key]) && candidate[key] >= min && candidate[key] <= max) {
+      result[key] = candidate[key];
+    }
+  }
   if (typeof candidate.model === 'string' && /^gemini-[a-z0-9][a-z0-9._-]*$/i.test(candidate.model)) {
     result.model = candidate.model;
   }

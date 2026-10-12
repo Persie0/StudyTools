@@ -45,7 +45,7 @@ test('card controls hide irrelevant fields and stay within responsive layout', a
   const [app, html, css] = await Promise.all([
     source('app.js'), source('gemini-anki.html'), source('gemini-anki.css')
   ]);
-  for (const id of ['standard-card-density', 'standard-pdf-reading', 'standard-image-options', 'lecture-mode-hint']) {
+  for (const id of ['standard-card-density', 'standard-pdf-reading', 'standard-image-options', 'legacy-lecture-options', 'legacy-include-text', 'legacy-detailed-grouping', 'legacy-slide-by-slide']) {
     assert.match(html, new RegExp('id="' + id + '"'));
   }
   for (const id of ['standardCardDensity', 'standardPdfReading', 'standardImageOptions']) {
@@ -120,7 +120,7 @@ test('init, PDF selection, and style switching still work without network', asyn
     'buildWholeDocumentLectureGroupingPrompt', 'isUsableLectureOutline',
     'normalizeLectureGroups', 'reconcileLectureWindowGroups',
     'buildLectureGroupingPrompt', 'buildLectureExplanationPrompt',
-    'normalizeLectureExplanation', 'lectureBackHtml'
+    'normalizeLectureExplanation', 'legacyLectureNoteFields', 'buildLegacyLectureAnnotationPrompt'
   ]) mocks[dependency] = () => {};
   const run = new Function(...Object.keys(mocks),
     app + '\nreturn { state, ui, switchInput, updateGenerateState };');
@@ -137,7 +137,7 @@ test('init, PDF selection, and style switching still work without network', asyn
 
   ui.cardMode.value = 'lecture';
   ui.cardMode.listeners.change[0]();
-  assert.equal(ui.lectureHint.hidden, false);
+  assert.equal(ui.legacyOptions.hidden, false);
   assert.equal(ui.standardCardDensity.hidden, true);
   assert.equal(ui.standardPdfReading.hidden, true);
   assert.equal(ui.standardImageOptions.hidden, true);

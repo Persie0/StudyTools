@@ -19,7 +19,7 @@ import {
   safeDeckName,
   stableNumericId
 } from './lib/anki-utils.js';
-import { loadSettings, saveSettings } from './lib/settings.js';
+import { loadSettings, saveSettings } from './lib/settings.js?v=20261012-original-notetype';
 import {
   lectureGroupingWindows,
   buildWholeDocumentLectureGroupingPrompt,
@@ -29,8 +29,9 @@ import {
   buildLectureGroupingPrompt,
   buildLectureExplanationPrompt,
   normalizeLectureExplanation,
-  lectureBackHtml
-} from './lib/lecture-notes.js';
+  legacyLectureNoteFields,
+  buildLegacyLectureAnnotationPrompt
+} from './lib/lecture-notes.js?v=20261012-original-notetype';
 
 const PDF_INLINE_LIMIT = 50 * 1024 * 1024;
 const PDF_INLINE_SAFETY_LIMIT = 47 * 1024 * 1024;
@@ -53,8 +54,10 @@ const ui = {
   inputTabs: [...document.querySelectorAll('[data-input-tab]')], inputPanels: [...document.querySelectorAll('[data-input-panel]')],
   fileInput: $('pdf-input'), choosePdfs: $('choose-pdfs'), dropzone: $('dropzone'), fileList: $('file-list'), textInput: $('text-input'), jsonInput: $('json-input'),
   slideFiles: $('slide-pdf-input'), chooseSlidePdf: $('choose-slide-pdf'), slideDropzone: $('slide-dropzone'), slideFileList: $('slide-file-list'), explainSlides: $('explain-slides'),
-  density: $('density'), cardMode: $('card-mode'), strategy: $('strategy'), language: $('language'), lectureHint: $('lecture-mode-hint'), standardCardDensity: $('standard-card-density'), standardPdfReading: $('standard-pdf-reading'),
+  density: $('density'), cardMode: $('card-mode'), strategy: $('strategy'), language: $('language'), standardCardDensity: $('standard-card-density'), standardPdfReading: $('standard-pdf-reading'),
   includeImages: $('include-images'), maxSourceImages: $('max-source-images'), standardImageOptions: $('standard-image-options'),
+  legacyOptions: $('legacy-lecture-options'), legacyIncludeText: $('legacy-include-text'), legacyDetailedGrouping: $('legacy-detailed-grouping'), legacySlideBySlide: $('legacy-slide-by-slide'),
+  legacyCompressImages: $('legacy-compress-images'), legacyAutoCrop: $('legacy-auto-crop'), legacyMaxResolution: $('legacy-max-resolution'), legacyMaxKB: $('legacy-max-kb'), legacyParallelism: $('legacy-parallelism'),
   generate: $('generate'), progress: $('progress'), progressFill: $('progress-fill'), status: $('status'), error: $('error'), results: $('results')
 };
 
@@ -113,6 +116,14 @@ function captureSettings() {
     language: ui.language.value,
     includeImages: ui.includeImages.checked,
     maxSourceImages: ui.maxSourceImages.value,
+    legacyIncludeText: ui.legacyIncludeText.checked,
+    legacyDetailedGrouping: ui.legacyDetailedGrouping.checked,
+    legacySlideBySlide: ui.legacySlideBySlide.checked,
+    legacyCompressImages: ui.legacyCompressImages.checked,
+    legacyAutoCrop: ui.legacyAutoCrop.checked,
+    legacyMaxResolution: Number(ui.legacyMaxResolution.value),
+    legacyMaxKB: Number(ui.legacyMaxKB.value),
+    legacyParallelism: Number(ui.legacyParallelism.value),
     activeInput: state.activeInput
   };
 }
@@ -129,12 +140,20 @@ function restoreSettings(saved) {
   ui.language.value = saved.language;
   ui.includeImages.checked = saved.includeImages;
   ui.maxSourceImages.value = saved.maxSourceImages;
+  ui.legacyIncludeText.checked = saved.legacyIncludeText;
+  ui.legacyDetailedGrouping.checked = saved.legacyDetailedGrouping;
+  ui.legacySlideBySlide.checked = saved.legacySlideBySlide;
+  ui.legacyCompressImages.checked = saved.legacyCompressImages;
+  ui.legacyAutoCrop.checked = saved.legacyAutoCrop;
+  ui.legacyMaxResolution.value = saved.legacyMaxResolution;
+  ui.legacyMaxKB.value = saved.legacyMaxKB;
+  ui.legacyParallelism.value = saved.legacyParallelism;
 }
 
 function syncLectureOptions() {
   const lectureSelected = ui.cardMode.value === 'lecture';
   const lectureMode = lectureSelected && state.activeInput === 'pdf';
-  ui.lectureHint.hidden = !lectureMode;
+  ui.legacyOptions.hidden = !lectureMode;
   ui.standardCardDensity.hidden = lectureMode;
   ui.standardPdfReading.hidden = lectureMode;
   ui.standardImageOptions.hidden = lectureMode;
@@ -305,6 +324,79 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
+// Restore original 2x slide rendering, optional border trim (15px margin),
+// and JPEG compression/resizing without adding the old external dependency.
+async function renderLegacyPdfPage(pdf, pageNumber) {
+  const page = await pdf.getPage(pageNumber);
+  const viewport = page.getViewport({ scale: 2 });
+  let canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.ceil(viewport.width));
+  canvas.height = Math.max(1, Math.ceil(viewport.height));
+  const context = canvas.getContext('2d', { alpha: false, willReadFrequently: ui.legacyAutoCrop.checked });
+  await page.render({ canvasContext: context, viewport }).promise;
+
+  if (ui.legacyAutoCrop.checked) {
+    try {
+      const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+      let left = width, right = 0, top = height, bottom = 0;
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const offset = (y * width + x) * 4;
+          if (data[offset] < 250 || data[offset + 1] < 250 || data[offset + 2] < 250) {
+            if (x < left) left = x;
+            if (x >= right) right = x + 1;
+            if (y < top) top = y;
+            if (y >= bottom) bottom = y + 1;
+          }
+        }
+      }
+      if (right > left && bottom > top) {
+        const padding = 15;
+        left = Math.max(0, left - padding);
+        top = Math.max(0, top - padding);
+        right = Math.min(width, right + padding);
+        bottom = Math.min(height, bottom + padding);
+        if (right - left < width || bottom - top < height) {
+          const cropped = document.createElement('canvas');
+          cropped.width = right - left;
+          cropped.height = bottom - top;
+          cropped.getContext('2d').drawImage(canvas, left, top,
+            cropped.width, cropped.height, 0, 0, cropped.width, cropped.height);
+          canvas = cropped;
+        }
+      }
+    } catch (error) {
+      console.warn('Slide autocrop failed; retaining uncropped original image.', error);
+    }
+  }
+
+  if (!ui.legacyCompressImages.checked) return canvasToJpeg(canvas, 0.9);
+
+  const maxResolution = Math.max(300, Math.min(4000, Number(ui.legacyMaxResolution.value) || 1800));
+  const targetBytes = Math.max(50, Math.min(10000, Number(ui.legacyMaxKB.value) || 500)) * 1024;
+  if (Math.max(canvas.width, canvas.height) > maxResolution) {
+    const scale = maxResolution / Math.max(canvas.width, canvas.height);
+    const resized = document.createElement('canvas');
+    resized.width = Math.max(1, Math.round(canvas.width * scale));
+    resized.height = Math.max(1, Math.round(canvas.height * scale));
+    resized.getContext('2d').drawImage(canvas, 0, 0, resized.width, resized.height);
+    canvas = resized;
+  }
+  // Quality first, then downscale further only if JPEG cannot meet target.
+  for (let resizeRound = 0; resizeRound < 5; resizeRound++) {
+    for (const quality of [0.9, 0.78, 0.64, 0.5, 0.4, 0.3]) {
+      const bytes = await canvasToJpeg(canvas, quality);
+      if (bytes.byteLength <= targetBytes || (resizeRound === 4 && quality === 0.3)) return bytes;
+    }
+    const resized = document.createElement('canvas');
+    resized.width = Math.max(1, Math.round(canvas.width * 0.8));
+    resized.height = Math.max(1, Math.round(canvas.height * 0.8));
+    resized.getContext('2d').drawImage(canvas, 0, 0, resized.width, resized.height);
+    canvas = resized;
+  }
+  throw new Error('Could not encode PDF slide.');
+}
+
 async function generateCardsDirectPdf(client, model, file, pdf, buffer) {
   if (file.size > PDF_INLINE_LIMIT) throw new Error('This PDF is over Gemini’s 50 MB inline PDF limit.');
   const prompt = buildPdfCardPrompt({ pageCount: pdf.numPages, density: ui.density.value, language: ui.language.value, mode: ui.cardMode.value });
@@ -451,7 +543,8 @@ async function generateLectureCards(client, model, pdf, buffer) {
   }
 
   const outlinePrompt = buildWholeDocumentLectureGroupingPrompt({
-    pageCount: pdf.numPages, language: ui.language.value
+    pageCount: pdf.numPages, language: ui.language.value,
+    detailedGrouping: ui.legacyDetailedGrouping.checked
   });
   let groups = null;
   const canSendWholePdf = modelMetadata(model).pdf &&
@@ -464,10 +557,13 @@ async function generateLectureCards(client, model, pdf, buffer) {
       const payload = await client.generateJson({
         model, prompt: outlinePrompt, pdfBase64: arrayBufferToBase64(buffer)
       });
-      if (!isUsableLectureOutline(payload, pdf.numPages)) {
+      if (!isUsableLectureOutline(payload, pdf.numPages, 0.3)) {
         throw new Error('Whole-PDF grouping did not cover enough source pages.');
       }
-      groups = normalizeLectureGroups(payload, 1, pdf.numPages);
+      groups = normalizeLectureGroups(payload, 1, pdf.numPages, {
+        includeMissing: false,
+        maxPages: ui.legacyDetailedGrouping.checked ? 4 : Infinity
+      });
     } catch (error) {
       console.warn('Whole-PDF topic grouping failed; trying a complete document-text outline.', error);
     }
@@ -483,10 +579,13 @@ async function generateLectureCards(client, model, pdf, buffer) {
         const payload = await client.generateJson({
           model, prompt: outlinePrompt + '\n\n' + completeText
         });
-        if (!isUsableLectureOutline(payload, pdf.numPages)) {
+        if (!isUsableLectureOutline(payload, pdf.numPages, 0.3)) {
           throw new Error('Whole-document text grouping did not cover enough source pages.');
         }
-        groups = normalizeLectureGroups(payload, 1, pdf.numPages);
+        groups = normalizeLectureGroups(payload, 1, pdf.numPages, {
+          includeMissing: false,
+          maxPages: ui.legacyDetailedGrouping.checked ? 4 : Infinity
+        });
       } catch (error) {
         console.warn('Whole-document text outline failed; recovering with overlapping visual page windows.', error);
       }
@@ -502,7 +601,7 @@ async function generateLectureCards(client, model, pdf, buffer) {
   async function getPageJpeg(page) {
     if (imageBytes.has(page)) return imageBytes.get(page);
     if (recentImages.has(page)) return recentImages.get(page);
-    const bytes = await renderPdfPage(pdf, page, 1500);
+    const bytes = await renderLegacyPdfPage(pdf, page);
     if (cacheForExport) {
       imageBytes.set(page, bytes);
     } else {
@@ -549,32 +648,65 @@ async function generateLectureCards(client, model, pdf, buffer) {
     // This allows e.g. a card spanning original pages 7–10.
     groups = reconcileLectureWindowGroups(windowResults, pdf.numPages);
   }
-  const cards = [];
-  for (let index = 0; index < groups.length; index++) {
-    const group = groups[index];
-    setStatus('Teaching topic ' + (index + 1) + '/' + groups.length +
-      ' from PDF pages ' + group.pages.join(', ') + '…',
-      42 + (index / Math.max(1, groups.length)) * 24);
-    const groupImages = [];
-    for (const page of group.pages) {
-      groupImages.push({ mimeType: 'image/jpeg', data: bytesToBase64(await getPageJpeg(page)) });
+  const cards = new Array(groups.length);
+  let nextIndex = 0;
+  let completed = 0;
+  async function processNextGroup() {
+    while (nextIndex < groups.length) {
+      const index = nextIndex++;
+      const group = groups[index];
+      setStatus('Teaching topic ' + (index + 1) + '/' + groups.length +
+        ' from PDF pages ' + group.pages.join(', ') + '…',
+        42 + (index / Math.max(1, groups.length)) * 24);
+      const groupImages = [];
+      for (const page of group.pages) {
+        groupImages.push({ mimeType: 'image/jpeg', data: bytesToBase64(await getPageJpeg(page)) });
+      }
+      if (ui.legacySlideBySlide.checked) {
+        const annotationsByPage = {};
+        for (let imageIndex = 0; imageIndex < group.pages.length; imageIndex++) {
+          const page = group.pages[imageIndex];
+          const prompt = buildLegacyLectureAnnotationPrompt({
+            page, language: ui.language.value
+          }) + '\n\n' + lectureTextContext(textByPage, [page]);
+          try {
+            const payload = await client.generateJson({
+              model, prompt, images: [groupImages[imageIndex]]
+            });
+            annotationsByPage[page] = String(payload?.annotation || '').trim();
+          } catch (error) {
+            console.warn('Optional annotation for slide ' + page + ' failed.', error);
+            annotationsByPage[page] = '';
+          }
+        }
+        cards[index] = { title: group.title, pages: group.pages, textByPage,
+          annotationsByPage, tags: [] };
+      } else {
+        const prompt = [
+          buildLectureExplanationPrompt({ pages: group.pages, language: ui.language.value }),
+          lectureTextContext(textByPage, group.pages)
+        ].join('\n\n');
+        let explanation;
+        try {
+          explanation = normalizeLectureExplanation(
+            await client.generateJson({ model, prompt, images: groupImages })
+          );
+        } catch (error) {
+          throw new Error('Could not generate a teaching explanation for pages ' +
+            group.pages.join(', ') + ': ' + (error?.message || error));
+        }
+        // As before, the whole-PDF group title is the actual card front;
+        // the explanation cannot silently replace it.
+        cards[index] = { title: group.title, pages: group.pages,
+          textByPage, explanation, tags: [] };
+      }
+      completed++;
+      setStatus('Processed legacy slide card ' + completed + '/' + groups.length + '…',
+        42 + (completed / Math.max(1, groups.length)) * 24);
     }
-    const prompt = [
-      buildLectureExplanationPrompt({ pages: group.pages, language: ui.language.value }),
-      lectureTextContext(textByPage, group.pages)
-    ].join('\n\n');
-    let explanation;
-    try {
-      explanation = normalizeLectureExplanation(
-        await client.generateJson({ model, prompt, images: groupImages })
-      );
-    } catch (error) {
-      throw new Error('Could not generate a detailed explanation for pages ' +
-        group.pages.join(', ') + ': ' + (error?.message || error));
-    }
-    cards.push({ title: explanation.title || group.title, pages: group.pages,
-      textByPage, explanation, tags: [] });
   }
+  const parallelism = Math.max(1, Math.min(50, Number(ui.legacyParallelism.value) || 10));
+  await Promise.all(Array.from({ length: Math.min(parallelism, groups.length) }, () => processNextGroup()));
   return { cards, imageBytes };
 }
 
@@ -587,7 +719,7 @@ async function mediaForCards(packageObject, pdf, cards, fileIndex, { forceAll = 
   let done = 0;
   for (const page of [...needed].sort((a, b) => a - b)) {
     setStatus(`Embedding source page ${page} into the Anki deck…`, 68 + (done / Math.max(1, needed.size)) * 18);
-    const bytes = imageCache?.get(page) || await renderPdfPage(pdf, page, 1500);
+    const bytes = imageCache?.get(page) || await (forceAll ? renderLegacyPdfPage(pdf, page) : renderPdfPage(pdf, page, 1500));
     const name = `studytools_${fileIndex}_${String(page).padStart(4, '0')}.jpg`;
     packageObject.addMedia(bytes, name);
     media.set(page, name);
@@ -620,32 +752,36 @@ function ankiModel() {
 }
 
 function lectureAnkiModel() {
+  // Same five fields and card template as the pre-redesign "AI Slides" notes.
+  // Keep a unique note type ID to prevent clashes with other Anki note types.
   return new Model({
-    name: 'StudyTools Lecture Slides v1',
-    id: String(stableNumericId('studytools-lecture-slides-v1') + 1_000_000_000_000),
-    flds: [{ name: 'Front' }, { name: 'Back' }, { name: 'SourcePages' }],
+    name: 'StudyTools AI Slides · Original',
+    id: String(stableNumericId('studytools-ai-slides-original-v1') + 1_000_000_000_000),
+    flds: [
+      { name: 'Order' },
+      { name: 'Front' },
+      { name: 'Back' },
+      { name: 'BackContent' },
+      { name: 'Text' }
+    ],
     req: [[0, 'all', [0]]],
-    tmpls: [{ name: 'Lecture card',
-      qfmt: '<div class="lecture-front">{{Front}}</div>',
-      afmt: '{{FrontSide}}<hr id="answer">{{Back}}' }],
+    tmpls: [{
+      name: 'Card 1',
+      qfmt: '{{Front}}',
+      afmt: '{{FrontSide}}<hr id=answer>{{Back}}<br><div class="back-content">{{BackContent}}</div>'
+      // The Text field must NEVER be referenced: it is only for searching.
+    }],
     css: [
-      '.card { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:17px; text-align:left; color:#172033; background:#fff; max-width:940px; margin:0 auto; line-height:1.6; }',
-      '.lecture-front { font-size:1.25em; font-weight:750; line-height:1.4; }',
-      '.lecture-source-images,.lecture-source-text,.lecture-explanation,.lecture-notes-section { margin:24px 0; }',
-      '.lecture-page { margin:16px 0 24px; }',
-      '.lecture-page img { display:block; width:100%; max-width:100%; height:auto; border-radius:8px; }',
-      '.lecture-page figcaption,.lecture-page-text h4 { font-size:.8em; color:#64748b; font-weight:650; margin:8px 0; }',
-      '.lecture-source-text { padding:14px 18px; border:1px solid #ced6e0; border-radius:8px; background:#f8fafc; }',
-      '.lecture-verbatim { white-space:pre-wrap; overflow-wrap:anywhere; font-size:.87em; line-height:1.55; }',
-      '.lecture-page-text + .lecture-page-text { margin-top:20px; border-top:1px solid #ced6e0; padding-top:12px; }',
-      '.lecture-explanation p { margin:12px 0; }',
-      '.lecture-overview { border-left:3px solid #2563eb; padding-left:14px; font-weight:600; }',
-      '.lecture-notes-section li { margin-bottom:8px; }',
-      '.card h3 { margin:16px 0 10px; font-size:1.1em; }',
-      'hr#answer { border:0; border-top:1px solid #cbd5e1; margin:20px 0; }',
-      '.nightMode .card { color:#eef2f6; background:#15171a; }',
-      '.nightMode .lecture-source-text { background:#25282c; border-color:#505764; }',
-      '.nightMode .lecture-page figcaption,.nightMode .lecture-page-text h4 { color:#b6c0ce; }'
+      '.card { font-family: Arial, sans-serif; font-size:20px; text-align:center; color:#111; background:#fff; }',
+      '.back-content { font-size:16px; display:inline-block; text-align:left; width:100%; max-width:700px; line-height:1.6; margin:10px auto; padding:10px; border-radius:5px; border:1px solid #eee; box-sizing:border-box; }',
+      '.back-content:empty { display:none; }',
+      '.slide-annotation { font-size:14px; display:inline-block; text-align:left; width:100%; max-width:700px; line-height:1.5; margin:5px auto 15px; padding:10px; background:#f0f0f0; border:1px solid #ddd; border-radius:5px; box-sizing:border-box; }',
+      'h2 { display:inline; }',
+      'img { max-width:95%; height:auto; }',
+      'hr#answer { border:0; border-top:1px solid #d0d5dd; margin:18px 0; }',
+      '.nightMode .card { color:#eee; background:#15171a; }',
+      '.nightMode .back-content { border-color:#444; }',
+      '.nightMode .slide-annotation { color:#eee; background:#25282c; border-color:#444; }'
     ].join('\n')
   });
 }
@@ -665,10 +801,16 @@ async function createDeck(cards, deckName, { pdf = null, fileIndex = 0, lecture 
   const media = pdf ? await mediaForCards(pkg, pdf, cards, fileIndex, { forceAll: lecture, imageCache }) : new Map();
   const maxImages = ui.maxSourceImages.value === 'all' ? Infinity : Math.max(0, Number(ui.maxSourceImages.value) || 0);
 
-  for (const card of cards) {
+  const baseTimestamp = Date.now();
+  for (const [index, card] of cards.entries()) {
     const mediaNames = card.pages.slice(0, maxImages).map(page => media.get(page)).filter(Boolean);
+    const order = String(baseTimestamp) + String(index).padStart(4, '0');
     const note = lecture
-      ? model.note([escapeHtml(card.title), lectureBackHtml(card, media), card.pages.join(', ')], card.tags)
+      ? model.note(legacyLectureNoteFields(card, media, {
+          order,
+          includeText: ui.legacyIncludeText.checked,
+          slideBySlide: ui.legacySlideBySlide.checked
+        }), card.tags)
       : model.note([escapeHtml(card.front), cardBackHtml(card, mediaNames), card.pages.join(', ')], card.tags);
     deck.addNote(note);
   }
@@ -934,7 +1076,9 @@ function bindEvents() {
   ui.clearKeys.addEventListener('click', clearKeys);
   ui.refreshModels.addEventListener('click', async () => { clearError(); try { await refreshModels(); } catch (error) { showError(error); } });
   ui.model.addEventListener('change', () => { updateModelMeta(); persistSettings(); });
-  [ui.density, ui.cardMode, ui.strategy, ui.language, ui.includeImages, ui.maxSourceImages]
+  [ui.density, ui.cardMode, ui.strategy, ui.language, ui.includeImages, ui.maxSourceImages,
+   ui.legacyIncludeText, ui.legacyDetailedGrouping, ui.legacySlideBySlide,
+   ui.legacyCompressImages, ui.legacyAutoCrop, ui.legacyMaxResolution, ui.legacyMaxKB, ui.legacyParallelism]
     .forEach(control => control.addEventListener('change', () => { syncLectureOptions(); persistSettings(); }));
   ui.generate.addEventListener('click', generate);
   ui.explainSlides.addEventListener('click', generate);
