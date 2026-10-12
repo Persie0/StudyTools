@@ -5,6 +5,8 @@ import {
   LECTURE_GROUP_BATCH_PAGES,
   LECTURE_GROUP_OVERLAP_PAGES,
   lectureGroupingWindows,
+  buildWholeDocumentLectureGroupingPrompt,
+  isUsableLectureOutline,
   reconcileLectureWindowGroups,
   LECTURE_GROUP_MAX_PAGES,
   normalizeLectureGroups,
@@ -120,7 +122,7 @@ test('app routes PDF lecture mode to separate visual grouping and Anki export', 
   const html = await readFile(new URL('../slidesToAnki/gemini-anki.html', import.meta.url), 'utf8');
   assert.match(html, /value="lecture"/);
   assert.match(app, /ui\.cardMode\.value === 'lecture'/);
-  assert.match(app, /await generateLectureCards\(client, model, pdf\)/);
+  assert.match(app, /await generateLectureCards\(client, model, pdf, buffer\)/);
   assert.match(app, /forceAll: lecture/);
   assert.match(app, /lectureBackHtml\(card, media\)/);
   assert.match(app, /imageCache\?\.get\(page\)/);
@@ -213,4 +215,34 @@ test('window prompt recognizes continuing topics and avoids invented hard batch 
   assert.match(prompt, /not a self-contained chapter/);
   assert.match(prompt, /Do not invent topic boundaries/);
   assert.match(prompt, /5 through 12/);
+});
+
+test('the first grouping analysis sees the entire original PDF rather than 8-page chunks', () => {
+  const prompt = buildWholeDocumentLectureGroupingPrompt({ pageCount: 48, language: 'German' });
+  assert.match(prompt, /ENTIRE attached lecture PDF/);
+  assert.match(prompt, /ALL 48 original PDF pages/);
+  assert.match(prompt, /pages 8 and 9/);
+  assert.match(prompt, /natural concept transitions/);
+  assert.match(prompt, /Write titles in German/);
+  assert.ok(prompt.includes(String.fromCharCode(10)), 'instructions must have readable real newlines');
+});
+
+test('a severely incomplete or empty global outline falls back instead of fragmenting the lecture', () => {
+  assert.equal(isUsableLectureOutline(null, 10), false);
+  assert.equal(isUsableLectureOutline({ groups: [] }, 10), false);
+  assert.equal(isUsableLectureOutline({ groups: [{ title: 'Too short', pages: [1, 2] }] }, 10), false);
+  assert.equal(isUsableLectureOutline({ groups: [{ title: 'Good coverage', pages: [1, 2, 3, 4, 5, 6, 7] }] }, 10), true);
+  assert.equal(isUsableLectureOutline({ groups: [{ title: 'All', pages: [1] }] }, 1), true);
+});
+
+test('whole-PDF analysis is primary and overlapping image windows are fallback only', async () => {
+  const app = await readFile(new URL('../slidesToAnki/app.js', import.meta.url), 'utf8');
+  const primary = app.indexOf('pdfBase64: arrayBufferToBase64(buffer)', app.indexOf('async function generateLectureCards('));
+  const text = app.indexOf('completeText = lectureTextContext', app.indexOf('async function generateLectureCards('));
+  const window = app.indexOf('const windows = lectureGroupingWindows(pdf.numPages)', app.indexOf('async function generateLectureCards('));
+  assert.ok(primary >= 0 && primary < text && text < window, 'whole PDF should be tried before text and windows');
+  assert.match(app, /if \(!groups\) \{\s*const windows = lectureGroupingWindows/);
+  assert.match(app, /isUsableLectureOutline\(payload, pdf\.numPages\)/);
+  assert.match(app, /pdfBase64: arrayBufferToBase64\(buffer\)/);
+  assert.match(app, /buffer\.byteLength <= PDF_INLINE_SAFETY_LIMIT/);
 });
