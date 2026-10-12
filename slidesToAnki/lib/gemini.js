@@ -129,20 +129,95 @@ export function extractResponseText(payload) {
   return parts.map(part => part?.text || '').join('\n').trim();
 }
 
+// JSON-mode models can still output single LaTeX backslashes (e.g. \( or
+// \frac), which are invalid JSON escapes or silently become \f, \t or \b.
+// Only normalize characters *inside* JSON strings. Never strip backslashes
+// globally, since doing so corrupts equations and legitimate JSON escapes.
+const LATEX_JSON_COMMANDS = new Set([
+  'frac', 'fbox', 'forall', 'footnotesize',
+  'beta', 'begin', 'bar', 'boldsymbol', 'mathbf', 'mathbb',
+  'binom', 'big', 'bigl', 'bigr', 'bigg', 'biggl', 'biggr', 'bf',
+  'theta', 'tau', 'times', 'text', 'textbf', 'textit', 'textrm',
+  'tilde', 'to', 'top', 'triangle', 'tan', 'tanh',
+  'rho', 'right', 'rightarrow', 'rangle', 'rm', 'ref',
+  'nabla', 'neq', 'notin', 'not', 'nu', 'newline',
+  'underbrace', 'underset', 'underline', 'uparrow',
+  'vec', 'vert', 'vphantom', 'varphi',
+  'dfrac', 'tfrac', 'sqrt', 'left', 'lim', 'log',
+  'sum', 'int', 'prod', 'alpha', 'gamma', 'delta',
+  'epsilon', 'sigma', 'pi', 'lambda', 'mu', 'omega',
+  'partial', 'infty', 'cdot', 'cdots', 'ldots',
+  'leq', 'geq', 'approx', 'leftarrow', 'overline',
+  'mathcal', 'mathit', 'mathrm', 'mathsf',
+  'bmod', 'backslash', 'breve', 'bigcup', 'bigcap', 'bfseries',
+  'rceil', 'rfloor', 'rvert', 'rVert', 'rbrace', 'rightleftharpoons',
+  'nexists', 'nRightarrow', 'textcolor', 'textstyle', 'tiny', 'therefore'
+]);
+
+export function repairModelJson(text) {
+  let repaired = '';
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (!inString) {
+      if (char === '"') inString = true;
+      // Only remove structural trailing commas, never commas inside text.
+      if (char === ',') {
+        let next = i + 1;
+        while (next < text.length && /\s/.test(text[next])) next++;
+        if (text[next] === '}' || text[next] === ']') continue;
+      }
+      repaired += char;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = false;
+      repaired += char;
+    } else if (char === '\\') {
+      const next = text[i + 1];
+      const command = /^[a-zA-Z]+/.exec(text.slice(i + 1))?.[0] || '';
+      const latex = LATEX_JSON_COMMANDS.has(command);
+      const validEscape = next === 'u'
+        ? /^[\da-fA-F]{4}$/.test(text.slice(i + 2, i + 6))
+        : next !== undefined && '"\\/bfnrt'.includes(next);
+      if (!validEscape || latex) {
+        // Escaping the slash itself preserves the literal LaTeX command.
+        repaired += '\\\\';
+      } else {
+        repaired += '\\' + next;
+        i++;
+      }
+    } else if (char === '\n') {
+      repaired += '\\n';
+    } else if (char === '\r') {
+      repaired += '\\r';
+    } else if (char === '\t') {
+      repaired += '\\t';
+    } else {
+      repaired += char;
+    }
+  }
+  return repaired;
+}
+
 export function extractJsonValue(text) {
   if (typeof text !== 'string') return text;
   const trimmed = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  const firstArray = trimmed.indexOf('[');
+  const firstObject = trimmed.indexOf('{');
+  const starts = [firstArray, firstObject].filter(index => index >= 0);
+  if (!starts.length) throw new Error('Gemini returned no JSON payload.');
+  const start = Math.min(...starts);
+  const end = Math.max(trimmed.lastIndexOf(']'), trimmed.lastIndexOf('}'));
+  if (end < start) throw new Error('Gemini returned incomplete JSON. Please retry generation.');
+  const candidate = trimmed.slice(start, end + 1);
   try {
-    return JSON.parse(trimmed);
+    // Repairing before parsing also protects \frac and \theta, which would
+    // otherwise be accepted as JSON control-character escapes.
+    return JSON.parse(repairModelJson(candidate));
   } catch (_) {
-    const firstArray = trimmed.indexOf('[');
-    const firstObject = trimmed.indexOf('{');
-    const starts = [firstArray, firstObject].filter(index => index >= 0);
-    if (!starts.length) throw new Error('Gemini returned no JSON payload.');
-    const start = Math.min(...starts);
-    const end = Math.max(trimmed.lastIndexOf(']'), trimmed.lastIndexOf('}'));
-    if (end < start) throw new Error('Gemini returned malformed JSON.');
-    return JSON.parse(trimmed.slice(start, end + 1).replace(/,\s*([}\]])/g, '$1'));
+    throw new Error('Gemini returned malformed JSON that could not be repaired. Please retry generation or choose another model.');
   }
 }
 
