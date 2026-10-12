@@ -135,7 +135,7 @@ export function normalizeLectureGroups(payload, start, end, { includeMissing = t
 
 // Reject empty or severely incomplete whole-document outlines so one weak AI
 // response does not produce dozens of isolated fallback pages without context.
-export function isUsableLectureOutline(payload, pageCount) {
+export function isUsableLectureOutline(payload, pageCount, minCoverage = 0.7) {
   const total = Math.max(1, Math.floor(Number(pageCount) || 1));
   const raw = Array.isArray(payload) ? payload :
     Array.isArray(payload?.groups) ? payload.groups :
@@ -145,7 +145,7 @@ export function isUsableLectureOutline(payload, pageCount) {
   for (const item of raw) {
     for (const page of normalizePages(item?.pages, total)) covered.add(page);
   }
-  return covered.size >= Math.ceil(total * 0.7);
+  return covered.size >= Math.ceil(total * minCoverage);
 }
 
 // Prefer one document-wide outline, just like the original slides-to-Anki
