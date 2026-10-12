@@ -118,6 +118,29 @@ export function normalizeLectureGroups(payload, start, end) {
   return proposed.sort((a, b) => a.pages[0] - b.pages[0]);
 }
 
+// Prefer one document-wide outline, just like the original slides-to-Anki
+// workflow. Fixed-size image windows are a fallback, not semantic boundaries.
+export function buildWholeDocumentLectureGroupingPrompt({ pageCount, language = 'auto' }) {
+  const count = Math.max(1, Math.floor(Number(pageCount) || 1));
+  const languageRule = language === 'auto'
+    ? 'Write titles in the primary language of the PDF.' : 'Write titles in ' + language + '.';
+  return [
+    'First analyze the ENTIRE attached lecture PDF as one coherent document, BEFORE deciding where individual Anki cards begin or end.',
+    'Identify the logical outline, continuity between neighboring slides, incremental reveals and transitions between topics.',
+    'Return groups of consecutive ORIGINAL PDF pages representing focused concepts or closely related explanations.',
+    'No fixed-size processing boundaries exist: adjacent pages (including pages 8 and 9, 16 and 17, etc.) may belong together.',
+    'Prefer small cohesive groups of 1–4 pages. Longer topics should be divided at natural concept transitions, not at arbitrary page numbers.',
+    'Each group needs a concise, descriptive title suitable for the front of an Anki card.',
+    'Use all substantive slide content, including diagrams, formula-heavy pages, conclusions and summaries.',
+    'Cover ALL ' + count + ' original PDF pages exactly once in ascending order. Include title, divider and agenda pages with a neighboring group where practical rather than discarding them.',
+    'Do not skip or repeat pages, and use ORIGINAL 1-based page numbers from 1 to ' + count + '.',
+    languageRule,
+    'Return strictly valid JSON only:',
+    '{"groups":[{"title":"First concept","pages":[1,2]},{"title":"Next concept","pages":[3,4]}]}',
+    'The numbers in the example are placeholders. Analyze the PDF and provide real topic boundaries for the entire document.'
+  ].join('\\n');
+}
+
 export function buildLectureGroupingPrompt({ start, end, language = 'auto' }) {
   const languageRule = language === 'auto'
     ? 'Use the main language of the original slides.' : 'Use ' + language + '.';
