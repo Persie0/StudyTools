@@ -98,6 +98,18 @@ export function normalizeLectureGroups(payload, start, end, { includeMissing = t
     const title = String(item?.title || item?.name || '').trim().slice(0, 180);
     const pages = normalizePages(item?.pages, end)
       .filter(page => page >= start && page <= end && !assigned.has(page));
+    if (!includeMissing) {
+      // Original AI Slides groups may intentionally skip intermediate builds
+      // or administrative pages. Keep the remaining non-contiguous images in
+      // ONE conceptual card instead of splitting at every omitted page.
+      const chunkSize = Number.isFinite(maxPages) ? Math.max(1, maxPages) : pages.length || 1;
+      for (let offset = 0; offset < pages.length; offset += chunkSize) {
+        proposed.push({ title: title || 'Pages ' + pages.join(', '),
+          pages: pages.slice(offset, offset + chunkSize) });
+      }
+      for (const page of pages) assigned.add(page);
+      continue;
+    }
     let run = [];
     const flush = () => {
       if (!run.length) return;
