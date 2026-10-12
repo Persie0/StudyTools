@@ -61,6 +61,12 @@
           <label class="check option-check"><input id="legacy-include-text" type="checkbox" checked> Include slide text for Anki search (hidden on cards)</label>
           <label class="check option-check"><input id="legacy-detailed-grouping" type="checkbox"> Detailed grouping (smaller topic groups)</label>
           <label class="check option-check"><input id="legacy-slide-by-slide" type="checkbox"> Slide-by-slide annotations instead of one group explanation</label>
+          <label class="check option-check"><input id="legacy-compress-images" type="checkbox" checked> Compress slide images</label>
+          <label class="check option-check"><input id="legacy-auto-crop" type="checkbox"> Auto-crop slide borders</label>
+          <div class="legacy-image-grid">
+            <div><label for="legacy-max-resolution">Max image width (px)</label><input id="legacy-max-resolution" type="number" min="300" max="4000" value="1800"></div>
+            <div><label for="legacy-max-kb">Max KB per slide</label><input id="legacy-max-kb" type="number" min="50" max="10000" value="500"></div>
+          </div>
         </div>
         <div id="standard-image-options">
           <label class="check option-check"><input id="include-images" type="checkbox" checked> Embed cited source pages in cards</label>
