@@ -496,16 +496,16 @@ async function generateLectureCards(client, model, pdf) {
   return { cards, imageBytes };
 }
 
-async function mediaForCards(packageObject, pdf, cards, fileIndex) {
-  if (!ui.includeImages.checked) return new Map();
-  const maxImages = ui.maxSourceImages.value === 'all' ? Infinity : Math.max(0, Number(ui.maxSourceImages.value) || 0);
+async function mediaForCards(packageObject, pdf, cards, fileIndex, { forceAll = false, imageCache = null } = {}) {
+  if (!forceAll && !ui.includeImages.checked) return new Map();
+  const maxImages = forceAll || ui.maxSourceImages.value === 'all' ? Infinity : Math.max(0, Number(ui.maxSourceImages.value) || 0);
   const needed = new Set();
   for (const card of cards) for (const page of card.pages.slice(0, maxImages)) needed.add(page);
   const media = new Map();
   let done = 0;
   for (const page of [...needed].sort((a, b) => a - b)) {
     setStatus(`Embedding source page ${page} into the Anki deck…`, 68 + (done / Math.max(1, needed.size)) * 18);
-    const bytes = await renderPdfPage(pdf, page, 1500);
+    const bytes = imageCache?.get(page) || await renderPdfPage(pdf, page, 1500);
     const name = `studytools_${fileIndex}_${String(page).padStart(4, '0')}.jpg`;
     packageObject.addMedia(bytes, name);
     media.set(page, name);
@@ -537,26 +537,55 @@ function ankiModel() {
   });
 }
 
-async function createDeck(cards, deckName, { pdf = null, fileIndex = 0 } = {}) {
+function lectureAnkiModel() {
+  return new Model({
+    name: 'StudyTools Lecture Slides v1',
+    id: String(stableNumericId('studytools-lecture-slides-v1') + 1_000_000_000_000),
+    flds: [{ name: 'Front' }, { name: 'Back' }, { name: 'SourcePages' }],
+    req: [[0, 'all', [0]]],
+    tmpls: [{ name: 'Lecture card',
+      qfmt: '<div class="lecture-front">{{Front}}</div>',
+      afmt: '{{FrontSide}}<hr id="answer">{{Back}}' }],
+    css: [
+      '.card { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:17px; text-align:left; color:#172033; background:#fff; max-width:940px; margin:0 auto; line-height:1.6; }',
+      '.lecture-front { font-size:1.25em; font-weight:750; line-height:1.4; }',
+      '.lecture-source-images,.lecture-source-text,.lecture-explanation,.lecture-notes-section { margin:24px 0; }',
+      '.lecture-page { margin:16px 0 24px; }',
+      '.lecture-page img { display:block; width:100%; max-width:100%; height:auto; border-radius:8px; }',
+      '.lecture-page figcaption,.lecture-page-text h4 { font-size:.8em; color:#64748b; font-weight:650; margin:8px 0; }',
+      '.lecture-source-text { padding:14px 18px; border:1px solid #ced6e0; border-radius:8px; background:#f8fafc; }',
+      '.lecture-verbatim { white-space:pre-wrap; overflow-wrap:anywhere; font-size:.87em; line-height:1.55; }',
+      '.lecture-page-text + .lecture-page-text { margin-top:20px; border-top:1px solid #ced6e0; padding-top:12px; }',
+      '.lecture-explanation p { margin:12px 0; }',
+      '.lecture-overview { border-left:3px solid #2563eb; padding-left:14px; font-weight:600; }',
+      '.lecture-notes-section li { margin-bottom:8px; }',
+      '.card h3 { margin:16px 0 10px; font-size:1.1em; }',
+      'hr#answer { border:0; border-top:1px solid #cbd5e1; margin:20px 0; }',
+      '.nightMode .card { color:#eef2f6; background:#15171a; }',
+      '.nightMode .lecture-source-text { background:#25282c; border-color:#505764; }',
+      '.nightMode .lecture-page figcaption,.nightMode .lecture-page-text h4 { color:#b6c0ce; }'
+    ].join('\n')
+  });
+}
+
+async function createDeck(cards, deckName, { pdf = null, fileIndex = 0, lecture = false, imageCache = null } = {}) {
   if (!cards.length) throw new Error('Gemini did not produce any valid flashcards. Try Detailed density or another model.');
   if (typeof Model === 'undefined' || typeof Deck === 'undefined' || typeof Package === 'undefined') throw new Error('Anki export library did not load. Reload the page and try again.');
   if (!window.SQL && sqlReady) await sqlReady;
   if (!window.SQL) throw new Error('SQL.js did not load, so the Anki package cannot be built.');
 
-  const model = ankiModel();
+  const model = lecture ? lectureAnkiModel() : ankiModel();
   const deck = new Deck(Date.now() + fileIndex, deckName);
   const pkg = new Package();
   pkg.addDeck(deck);
-  const media = pdf ? await mediaForCards(pkg, pdf, cards, fileIndex) : new Map();
+  const media = pdf ? await mediaForCards(pkg, pdf, cards, fileIndex, { forceAll: lecture, imageCache }) : new Map();
   const maxImages = ui.maxSourceImages.value === 'all' ? Infinity : Math.max(0, Number(ui.maxSourceImages.value) || 0);
 
   for (const card of cards) {
     const mediaNames = card.pages.slice(0, maxImages).map(page => media.get(page)).filter(Boolean);
-    const note = model.note([
-      escapeHtml(card.front),
-      cardBackHtml(card, mediaNames),
-      card.pages.join(', ')
-    ], card.tags);
+    const note = lecture
+      ? model.note([escapeHtml(card.title), lectureBackHtml(card, media), card.pages.join(', ')], card.tags)
+      : model.note([escapeHtml(card.front), cardBackHtml(card, mediaNames), card.pages.join(', ')], card.tags);
     deck.addNote(note);
   }
 
@@ -568,9 +597,13 @@ async function createDeck(cards, deckName, { pdf = null, fileIndex = 0 } = {}) {
 async function processPdf(file, fileIndex, totalFiles, client, model) {
   setStatus(`Loading ${file.name}…`, 6 + (fileIndex / totalFiles) * 5);
   const { pdf, buffer } = await loadPdf(file);
-  const cards = await generatePdfCards(client, model, file, pdf, buffer);
+  const lecture = ui.cardMode.value === 'lecture';
+  const generated = lecture ? await generateLectureCards(client, model, pdf) : null;
+  const cards = lecture ? generated.cards : await generatePdfCards(client, model, file, pdf, buffer);
   setStatus(`Validated ${cards.length} cards for ${file.name}.`, 66);
-  const count = await createDeck(cards, safeDeckName(file.name), { pdf, fileIndex });
+  const count = await createDeck(cards, safeDeckName(file.name), {
+    pdf, fileIndex, lecture, imageCache: generated?.imageBytes
+  });
   return { name: file.name, count, pages: pdf.numPages };
 }
 
