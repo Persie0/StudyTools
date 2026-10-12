@@ -459,7 +459,8 @@ async function generateLectureCards(client, model, pdf, buffer) {
   }
 
   const outlinePrompt = buildWholeDocumentLectureGroupingPrompt({
-    pageCount: pdf.numPages, language: ui.language.value
+    pageCount: pdf.numPages, language: ui.language.value,
+    detailedGrouping: ui.legacyDetailedGrouping.checked
   });
   let groups = null;
   const canSendWholePdf = modelMetadata(model).pdf &&
@@ -475,7 +476,10 @@ async function generateLectureCards(client, model, pdf, buffer) {
       if (!isUsableLectureOutline(payload, pdf.numPages)) {
         throw new Error('Whole-PDF grouping did not cover enough source pages.');
       }
-      groups = normalizeLectureGroups(payload, 1, pdf.numPages);
+      groups = normalizeLectureGroups(payload, 1, pdf.numPages, {
+        includeMissing: false,
+        maxPages: ui.legacyDetailedGrouping.checked ? 4 : Infinity
+      });
     } catch (error) {
       console.warn('Whole-PDF topic grouping failed; trying a complete document-text outline.', error);
     }
@@ -494,7 +498,10 @@ async function generateLectureCards(client, model, pdf, buffer) {
         if (!isUsableLectureOutline(payload, pdf.numPages)) {
           throw new Error('Whole-document text grouping did not cover enough source pages.');
         }
-        groups = normalizeLectureGroups(payload, 1, pdf.numPages);
+        groups = normalizeLectureGroups(payload, 1, pdf.numPages, {
+        includeMissing: false,
+        maxPages: ui.legacyDetailedGrouping.checked ? 4 : Infinity
+      });
       } catch (error) {
         console.warn('Whole-document text outline failed; recovering with overlapping visual page windows.', error);
       }
@@ -567,21 +574,44 @@ async function generateLectureCards(client, model, pdf, buffer) {
     for (const page of group.pages) {
       groupImages.push({ mimeType: 'image/jpeg', data: bytesToBase64(await getPageJpeg(page)) });
     }
-    const prompt = [
-      buildLectureExplanationPrompt({ pages: group.pages, language: ui.language.value }),
-      lectureTextContext(textByPage, group.pages)
-    ].join('\n\n');
-    let explanation;
-    try {
-      explanation = normalizeLectureExplanation(
-        await client.generateJson({ model, prompt, images: groupImages })
-      );
-    } catch (error) {
-      throw new Error('Could not generate a detailed explanation for pages ' +
-        group.pages.join(', ') + ': ' + (error?.message || error));
+    if (ui.legacySlideBySlide.checked) {
+      const annotationsByPage = {};
+      for (let imageIndex = 0; imageIndex < group.pages.length; imageIndex++) {
+        const page = group.pages[imageIndex];
+        const prompt = buildLegacyLectureAnnotationPrompt({
+          page, language: ui.language.value
+        }) + '\n\n' + lectureTextContext(textByPage, [page]);
+        try {
+          const payload = await client.generateJson({
+            model, prompt, images: [groupImages[imageIndex]]
+          });
+          annotationsByPage[page] = String(payload?.annotation || '').trim();
+        } catch (error) {
+          console.warn('Optional annotation for slide ' + page + ' failed.', error);
+          annotationsByPage[page] = '';
+        }
+      }
+      cards.push({ title: group.title, pages: group.pages, textByPage,
+        annotationsByPage, tags: [] });
+    } else {
+      const prompt = [
+        buildLectureExplanationPrompt({ pages: group.pages, language: ui.language.value }),
+        lectureTextContext(textByPage, group.pages)
+      ].join('\n\n');
+      let explanation;
+      try {
+        explanation = normalizeLectureExplanation(
+          await client.generateJson({ model, prompt, images: groupImages })
+        );
+      } catch (error) {
+        throw new Error('Could not generate a teaching explanation for pages ' +
+          group.pages.join(', ') + ': ' + (error?.message || error));
+      }
+      // As before, the whole-PDF group title is the actual card front;
+      // the explanation cannot silently replace it.
+      cards.push({ title: group.title, pages: group.pages,
+        textByPage, explanation, tags: [] });
     }
-    cards.push({ title: explanation.title || group.title, pages: group.pages,
-      textByPage, explanation, tags: [] });
   }
   return { cards, imageBytes };
 }
