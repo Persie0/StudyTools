@@ -78,6 +78,7 @@ export function buildPdfCardPrompt({ pageCount, density = 'balanced', language =
     'Avoid trivial cards, duplicates, administrative slides, agenda/title pages, and cards that can only be understood with missing context.',
     'If several incremental slides show the same concept, use the final/most complete slide as the primary source.',
     'Every card must include the 1-based source page numbers that support it.',
+    'Use strictly valid JSON: inside every string, double-escape literal backslashes used for LaTeX commands and MathJax delimiters; encode line breaks as \\n instead of inserting raw line breaks.',
     'Return JSON only in this exact shape:',
     '{"cards":[{"front":"...","back":"...","pages":[1],"tags":["topic"]}]}'
   ].join('\n');
@@ -91,6 +92,7 @@ export function buildTextCardPrompt({ density = 'balanced', language = 'auto' } 
     languageRule,
     'Prefer recall questions and concise self-contained answers. Avoid duplicates and trivia.',
     'For mathematical notation, use Anki-compatible MathJax delimiters \\(...\\) or \\[...\\].',
+    'Use strictly valid JSON: inside every string, double-escape literal backslashes used for LaTeX commands and MathJax delimiters; encode line breaks as \\n instead of inserting raw line breaks.',
     'Return JSON only in this exact shape:',
     '{"cards":[{"front":"...","back":"...","pages":[],"tags":["topic"]}]}'
   ].join('\n');
@@ -133,6 +135,7 @@ export function buildSlideExplanationPrompt({ pageNumber, pageCount, language = 
     'Stay faithful to the slide. If an element is unreadable or the slide lacks context, say so briefly instead of guessing.',
     languageRule,
     `This is slide ${pageNumber} of ${pageCount}. Refer to other slides only when they are present in the supplied context.`,
+    'Use strictly valid JSON: inside every string, double-escape literal backslashes used for LaTeX commands and MathJax delimiters; encode line breaks as \\n instead of inserting raw line breaks.',
     'Return JSON only in this exact shape:',
     '{"title":"short descriptive slide title","explanation":"clear, detailed explanation in paragraphs","keyPoints":["important point","important point"],"terms":[{"term":"term","meaning":"meaning"}]}'
   ].join('\n');
