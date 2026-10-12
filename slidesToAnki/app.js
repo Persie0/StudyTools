@@ -20,6 +20,14 @@ import {
   stableNumericId
 } from './lib/anki-utils.js';
 import { loadSettings, saveSettings } from './lib/settings.js';
+import {
+  LECTURE_GROUP_BATCH_PAGES,
+  buildLectureGroupingPrompt,
+  buildLectureExplanationPrompt,
+  normalizeLectureGroups,
+  normalizeLectureExplanation,
+  lectureBackHtml
+} from './lib/lecture-notes.js';
 
 const PDF_INLINE_LIMIT = 50 * 1024 * 1024;
 const PDF_INLINE_SAFETY_LIMIT = 47 * 1024 * 1024;
@@ -42,8 +50,8 @@ const ui = {
   inputTabs: [...document.querySelectorAll('[data-input-tab]')], inputPanels: [...document.querySelectorAll('[data-input-panel]')],
   fileInput: $('pdf-input'), choosePdfs: $('choose-pdfs'), dropzone: $('dropzone'), fileList: $('file-list'), textInput: $('text-input'), jsonInput: $('json-input'),
   slideFiles: $('slide-pdf-input'), chooseSlidePdf: $('choose-slide-pdf'), slideDropzone: $('slide-dropzone'), slideFileList: $('slide-file-list'), explainSlides: $('explain-slides'),
-  density: $('density'), cardMode: $('card-mode'), strategy: $('strategy'), language: $('language'),
-  includeImages: $('include-images'), maxSourceImages: $('max-source-images'),
+  density: $('density'), cardMode: $('card-mode'), strategy: $('strategy'), language: $('language'), lectureHint: $('lecture-mode-hint'),
+  includeImages: $('include-images'), maxSourceImages: $('max-source-images'), standardImageOptions: $('standard-image-options'),
   generate: $('generate'), progress: $('progress'), progressFill: $('progress-fill'), status: $('status'), error: $('error'), results: $('results'),
   keyHelp: $('key-help')
 };
@@ -121,6 +129,18 @@ function restoreSettings(saved) {
   ui.maxSourceImages.value = saved.maxSourceImages;
 }
 
+function syncLectureOptions() {
+  const lectureSelected = ui.cardMode.value === 'lecture';
+  const lectureMode = lectureSelected && state.activeInput === 'pdf';
+  ui.lectureHint.hidden = !lectureSelected;
+  ui.standardImageOptions.hidden = lectureMode;
+  // All original source images are mandatory in lecture-notes mode. Preserve
+  // the user's ordinary settings for when they switch back to regular cards.
+  for (const control of [ui.density, ui.strategy, ui.includeImages, ui.maxSourceImages]) {
+    control.disabled = lectureMode;
+  }
+}
+
 function updateGenerateState() {
   if (state.busy) {
     ui.generate.disabled = true;
@@ -186,6 +206,7 @@ function switchInput(input) {
   }
   for (const panel of ui.inputPanels) panel.hidden = panel.dataset.inputPanel !== state.activeInput;
   document.body.dataset.inputMode = state.activeInput;
+  syncLectureOptions();
   updateGenerateState();
   persistSettings();
 }
@@ -392,16 +413,107 @@ async function generatePdfCards(client, model, file, pdf, buffer) {
   return generateCardsFromPdfText(client, model, pdf);
 }
 
-async function mediaForCards(packageObject, pdf, cards, fileIndex) {
-  if (!ui.includeImages.checked) return new Map();
-  const maxImages = ui.maxSourceImages.value === 'all' ? Infinity : Math.max(0, Number(ui.maxSourceImages.value) || 0);
+// Unlike an AI summary, this keeps every extractable character from each
+// source page in the exported Anki note. PDF text extraction is not OCR.
+async function extractLecturePageText(pdf, pageNumber) {
+  const page = await pdf.getPage(pageNumber);
+  const content = await page.getTextContent();
+  return content.items.map(item =>
+    String(item?.str || '') + (item?.hasEOL ? '\n' : ' ')
+  ).join('').trim();
+}
+
+function lectureTextContext(textByPage, pages, perPageLimit = 14000) {
+  return pages.map(page => {
+    const text = textByPage[page] || '';
+    const clipped = text.slice(0, perPageLimit);
+    return '--- ORIGINAL PDF PAGE ' + page + ' ---\n' +
+      (clipped || '[No selectable text — interpret the attached slide image]') +
+      (clipped.length < text.length ? '\n[Text excerpt clipped for model input; full original text is preserved in the Anki card]' : '');
+  }).join('\n\n');
+}
+
+// Separate grouping and teaching passes reproduce the old grouped-slide cards,
+// but the explanation pass reads every page visually and writes richer notes.
+async function generateLectureCards(client, model, pdf) {
+  if (!modelMetadata(model).imageInput) {
+    throw new Error('Lecture-slide notes need a Gemini model with image input. Select a multimodal Flash or Pro model.');
+  }
+  const textByPage = {};
+  for (let page = 1; page <= pdf.numPages; page++) {
+    setStatus('Extracting full PDF text from page ' + page + '/' + pdf.numPages + '…',
+      8 + (page / pdf.numPages) * 8);
+    textByPage[page] = await extractLecturePageText(pdf, page);
+  }
+
+  const cards = [];
+  // Avoid retaining hundreds of high-resolution JPEGs in memory for very large PDFs.
+  // For larger files the final Anki export can render pages again, batch by batch.
+  const imageBytes = new Map();
+  const cacheForExport = pdf.numPages <= 80;
+  for (let start = 1; start <= pdf.numPages; start += LECTURE_GROUP_BATCH_PAGES) {
+    const end = Math.min(pdf.numPages, start + LECTURE_GROUP_BATCH_PAGES - 1);
+    const pages = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+    setStatus('Reading and grouping slide images ' + start + '–' + end + '…',
+      17 + ((start - 1) / pdf.numPages) * 25);
+
+    const images = [];
+    const batchBytes = new Map();
+    for (const page of pages) {
+      const bytes = await renderPdfPage(pdf, page, 1500);
+      batchBytes.set(page, bytes);
+      if (cacheForExport) imageBytes.set(page, bytes);
+      images.push({ mimeType: 'image/jpeg', data: bytesToBase64(bytes) });
+    }
+
+    let grouping = null;
+    try {
+      const prompt = [
+        buildLectureGroupingPrompt({ start, end, language: ui.language.value }),
+        lectureTextContext(textByPage, pages, 2400)
+      ].join('\n\n');
+      grouping = await client.generateJson({ model, prompt, images });
+    } catch (error) {
+      // Grouping is optional: never drop a page when this auxiliary call fails.
+      console.warn('Could not group PDF pages ' + start + '–' + end + '; using individual page cards.', error);
+    }
+    const groups = normalizeLectureGroups(grouping, start, end);
+    for (const group of groups) {
+      setStatus('Teaching topic from PDF pages ' + group.pages.join(', ') + '…',
+        42 + (group.pages[0] / pdf.numPages) * 24);
+      const groupImages = group.pages.map(page => ({
+        mimeType: 'image/jpeg', data: bytesToBase64(batchBytes.get(page))
+      }));
+      const prompt = [
+        buildLectureExplanationPrompt({ pages: group.pages, language: ui.language.value }),
+        lectureTextContext(textByPage, group.pages)
+      ].join('\n\n');
+      let explanation;
+      try {
+        explanation = normalizeLectureExplanation(
+          await client.generateJson({ model, prompt, images: groupImages })
+        );
+      } catch (error) {
+        throw new Error('Could not generate a detailed explanation for pages ' +
+          group.pages.join(', ') + ': ' + (error?.message || error));
+      }
+      cards.push({ title: explanation.title || group.title, pages: group.pages,
+        textByPage, explanation, tags: [] });
+    }
+  }
+  return { cards, imageBytes };
+}
+
+async function mediaForCards(packageObject, pdf, cards, fileIndex, { forceAll = false, imageCache = null } = {}) {
+  if (!forceAll && !ui.includeImages.checked) return new Map();
+  const maxImages = forceAll || ui.maxSourceImages.value === 'all' ? Infinity : Math.max(0, Number(ui.maxSourceImages.value) || 0);
   const needed = new Set();
   for (const card of cards) for (const page of card.pages.slice(0, maxImages)) needed.add(page);
   const media = new Map();
   let done = 0;
   for (const page of [...needed].sort((a, b) => a - b)) {
     setStatus(`Embedding source page ${page} into the Anki deck…`, 68 + (done / Math.max(1, needed.size)) * 18);
-    const bytes = await renderPdfPage(pdf, page, 1500);
+    const bytes = imageCache?.get(page) || await renderPdfPage(pdf, page, 1500);
     const name = `studytools_${fileIndex}_${String(page).padStart(4, '0')}.jpg`;
     packageObject.addMedia(bytes, name);
     media.set(page, name);
@@ -433,40 +545,75 @@ function ankiModel() {
   });
 }
 
-async function createDeck(cards, deckName, { pdf = null, fileIndex = 0 } = {}) {
-  if (!cards.length) throw new Error('Gemini did not produce any valid flashcards. Try Detailed density or another model.');
+function lectureAnkiModel() {
+  return new Model({
+    name: 'StudyTools Lecture Slides v1',
+    id: String(stableNumericId('studytools-lecture-slides-v1') + 1_000_000_000_000),
+    flds: [{ name: 'Front' }, { name: 'Back' }, { name: 'SourcePages' }],
+    req: [[0, 'all', [0]]],
+    tmpls: [{ name: 'Lecture card',
+      qfmt: '<div class="lecture-front">{{Front}}</div>',
+      afmt: '{{FrontSide}}<hr id="answer">{{Back}}' }],
+    css: [
+      '.card { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:17px; text-align:left; color:#172033; background:#fff; max-width:940px; margin:0 auto; line-height:1.6; }',
+      '.lecture-front { font-size:1.25em; font-weight:750; line-height:1.4; }',
+      '.lecture-source-images,.lecture-source-text,.lecture-explanation,.lecture-notes-section { margin:24px 0; }',
+      '.lecture-page { margin:16px 0 24px; }',
+      '.lecture-page img { display:block; width:100%; max-width:100%; height:auto; border-radius:8px; }',
+      '.lecture-page figcaption,.lecture-page-text h4 { font-size:.8em; color:#64748b; font-weight:650; margin:8px 0; }',
+      '.lecture-source-text { padding:14px 18px; border:1px solid #ced6e0; border-radius:8px; background:#f8fafc; }',
+      '.lecture-verbatim { white-space:pre-wrap; overflow-wrap:anywhere; font-size:.87em; line-height:1.55; }',
+      '.lecture-page-text + .lecture-page-text { margin-top:20px; border-top:1px solid #ced6e0; padding-top:12px; }',
+      '.lecture-explanation p { margin:12px 0; }',
+      '.lecture-overview { border-left:3px solid #2563eb; padding-left:14px; font-weight:600; }',
+      '.lecture-notes-section li { margin-bottom:8px; }',
+      '.card h3 { margin:16px 0 10px; font-size:1.1em; }',
+      'hr#answer { border:0; border-top:1px solid #cbd5e1; margin:20px 0; }',
+      '.nightMode .card { color:#eef2f6; background:#15171a; }',
+      '.nightMode .lecture-source-text { background:#25282c; border-color:#505764; }',
+      '.nightMode .lecture-page figcaption,.nightMode .lecture-page-text h4 { color:#b6c0ce; }'
+    ].join('\n')
+  });
+}
+
+async function createDeck(cards, deckName, { pdf = null, fileIndex = 0, lecture = false, imageCache = null } = {}) {
+  if (!cards.length) throw new Error(lecture
+    ? 'No lecture-note cards could be created from this PDF.'
+    : 'Gemini did not produce any valid flashcards. Try Detailed density or another model.');
   if (typeof Model === 'undefined' || typeof Deck === 'undefined' || typeof Package === 'undefined') throw new Error('Anki export library did not load. Reload the page and try again.');
   if (!window.SQL && sqlReady) await sqlReady;
   if (!window.SQL) throw new Error('SQL.js did not load, so the Anki package cannot be built.');
 
-  const model = ankiModel();
+  const model = lecture ? lectureAnkiModel() : ankiModel();
   const deck = new Deck(Date.now() + fileIndex, deckName);
   const pkg = new Package();
   pkg.addDeck(deck);
-  const media = pdf ? await mediaForCards(pkg, pdf, cards, fileIndex) : new Map();
+  const media = pdf ? await mediaForCards(pkg, pdf, cards, fileIndex, { forceAll: lecture, imageCache }) : new Map();
   const maxImages = ui.maxSourceImages.value === 'all' ? Infinity : Math.max(0, Number(ui.maxSourceImages.value) || 0);
 
   for (const card of cards) {
     const mediaNames = card.pages.slice(0, maxImages).map(page => media.get(page)).filter(Boolean);
-    const note = model.note([
-      escapeHtml(card.front),
-      cardBackHtml(card, mediaNames),
-      card.pages.join(', ')
-    ], card.tags);
+    const note = lecture
+      ? model.note([escapeHtml(card.title), lectureBackHtml(card, media), card.pages.join(', ')], card.tags)
+      : model.note([escapeHtml(card.front), cardBackHtml(card, mediaNames), card.pages.join(', ')], card.tags);
     deck.addNote(note);
   }
 
   setStatus(`Building ${cards.length} Anki cards…`, 92);
-  pkg.writeToFile(`${deckName}.apkg`);
+  await pkg.writeToFile(`${deckName}.apkg`);
   return cards.length;
 }
 
 async function processPdf(file, fileIndex, totalFiles, client, model) {
   setStatus(`Loading ${file.name}…`, 6 + (fileIndex / totalFiles) * 5);
   const { pdf, buffer } = await loadPdf(file);
-  const cards = await generatePdfCards(client, model, file, pdf, buffer);
+  const lecture = ui.cardMode.value === 'lecture';
+  const generated = lecture ? await generateLectureCards(client, model, pdf) : null;
+  const cards = lecture ? generated.cards : await generatePdfCards(client, model, file, pdf, buffer);
   setStatus(`Validated ${cards.length} cards for ${file.name}.`, 66);
-  const count = await createDeck(cards, safeDeckName(file.name), { pdf, fileIndex });
+  const count = await createDeck(cards, safeDeckName(file.name), {
+    pdf, fileIndex, lecture, imageCache: generated?.imageBytes
+  });
   return { name: file.name, count, pages: pdf.numPages };
 }
 
@@ -714,7 +861,7 @@ function bindEvents() {
   ui.refreshModels.addEventListener('click', async () => { clearError(); try { await refreshModels(); } catch (error) { showError(error); } });
   ui.model.addEventListener('change', () => { updateModelMeta(); persistSettings(); });
   [ui.density, ui.cardMode, ui.strategy, ui.language, ui.includeImages, ui.maxSourceImages]
-    .forEach(control => control.addEventListener('change', persistSettings));
+    .forEach(control => control.addEventListener('change', () => { syncLectureOptions(); persistSettings(); }));
   ui.generate.addEventListener('click', generate);
   ui.explainSlides.addEventListener('click', generate);
   ui.chooseSlidePdf.addEventListener('click', event => { event.stopPropagation(); ui.slideFiles.click(); });
@@ -740,6 +887,7 @@ function init() {
   let savedSettings = null;
   try { savedSettings = loadSettings(localStorage); } catch (_) {}
   restoreSettings(savedSettings);
+  syncLectureOptions();
   const storedModel = savedSettings?.model || readStoredValue(MODEL_STORAGE) || DEFAULT_MODEL;
   state.models = mergeModelLists([{ id: storedModel, name: `models/${storedModel}` }], fallbackModelList());
   renderModelOptions(storedModel);

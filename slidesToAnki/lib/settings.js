@@ -4,7 +4,7 @@ export const SETTINGS_STORAGE = 'studytoolsAnkiSettingsV1';
 
 const OPTIONS = {
   density: ['compact', 'balanced', 'detailed'],
-  cardMode: ['questions', 'topics'],
+  cardMode: ['questions', 'topics', 'lecture'],
   strategy: ['auto', 'direct', 'images', 'text'],
   language: ['auto', 'English', 'German'],
   maxSourceImages: ['1', '2', '3', 'all'],
