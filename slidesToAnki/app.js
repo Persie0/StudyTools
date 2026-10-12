@@ -447,7 +447,10 @@ async function generateLectureCards(client, model, pdf) {
   }
 
   const cards = [];
+  // Avoid retaining hundreds of high-resolution JPEGs in memory for very large PDFs.
+  // For larger files the final Anki export can render pages again, batch by batch.
   const imageBytes = new Map();
+  const cacheForExport = pdf.numPages <= 80;
   for (let start = 1; start <= pdf.numPages; start += LECTURE_GROUP_BATCH_PAGES) {
     const end = Math.min(pdf.numPages, start + LECTURE_GROUP_BATCH_PAGES - 1);
     const pages = Array.from({ length: end - start + 1 }, (_, i) => start + i);
@@ -455,9 +458,11 @@ async function generateLectureCards(client, model, pdf) {
       17 + ((start - 1) / pdf.numPages) * 25);
 
     const images = [];
+    const batchBytes = new Map();
     for (const page of pages) {
       const bytes = await renderPdfPage(pdf, page, 1500);
-      imageBytes.set(page, bytes);
+      batchBytes.set(page, bytes);
+      if (cacheForExport) imageBytes.set(page, bytes);
       images.push({ mimeType: 'image/jpeg', data: bytesToBase64(bytes) });
     }
 
@@ -477,7 +482,7 @@ async function generateLectureCards(client, model, pdf) {
       setStatus('Teaching topic from PDF pages ' + group.pages.join(', ') + '…',
         42 + (group.pages[0] / pdf.numPages) * 24);
       const groupImages = group.pages.map(page => ({
-        mimeType: 'image/jpeg', data: bytesToBase64(imageBytes.get(page))
+        mimeType: 'image/jpeg', data: bytesToBase64(batchBytes.get(page))
       }));
       const prompt = [
         buildLectureExplanationPrompt({ pages: group.pages, language: ui.language.value }),
