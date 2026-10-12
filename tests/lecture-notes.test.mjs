@@ -156,6 +156,14 @@ test('original grouping permits intentional skipping and longer sections when de
   assert.match(prompt, /REMOVE only genuinely content-free/);
 });
 
+test('legacy grouping retains a single card when middle reveal slides are deliberately omitted', () => {
+  const original = normalizeLectureGroups({ groups: [
+    { title: 'Topic with hidden incremental pages', pages: [2, 5, 7] }
+  ] }, 1, 8, { includeMissing: false, maxPages: Infinity });
+  assert.deepEqual(original, [{ title: 'Topic with hidden incremental pages', pages: [2, 5, 7] }]);
+  assert.equal(isUsableLectureOutline({ groups: [{ pages: [2, 5, 7] }] }, 8, 0.3), true);
+});
+
 test('app routes PDF legacy mode into original searchable five-field Anki export', async () => {
   const app = await readFile(new URL('../slidesToAnki/app.js', import.meta.url), 'utf8');
   const html = await readFile(new URL('../slidesToAnki/gemini-anki.html', import.meta.url), 'utf8');
@@ -291,7 +299,7 @@ test('whole-PDF analysis is primary and overlapping image windows are fallback o
   const window = app.indexOf('const windows = lectureGroupingWindows(pdf.numPages)', app.indexOf('async function generateLectureCards('));
   assert.ok(primary >= 0 && primary < text && text < window, 'whole PDF should be tried before text and windows');
   assert.match(app, /if \(!groups\) \{\s*const windows = lectureGroupingWindows/);
-  assert.match(app, /isUsableLectureOutline\(payload, pdf\.numPages\)/);
+  assert.match(app, /isUsableLectureOutline\(payload, pdf\.numPages, 0\.3\)/);
   assert.match(app, /pdfBase64: arrayBufferToBase64\(buffer\)/);
   assert.match(app, /buffer\.byteLength <= PDF_INLINE_SAFETY_LIMIT/);
 });
