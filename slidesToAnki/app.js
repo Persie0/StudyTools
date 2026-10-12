@@ -29,7 +29,8 @@ import {
   buildLectureGroupingPrompt,
   buildLectureExplanationPrompt,
   normalizeLectureExplanation,
-  lectureBackHtml
+  legacyLectureNoteFields,
+  buildLegacyLectureAnnotationPrompt
 } from './lib/lecture-notes.js';
 
 const PDF_INLINE_LIMIT = 50 * 1024 * 1024;
@@ -55,6 +56,7 @@ const ui = {
   slideFiles: $('slide-pdf-input'), chooseSlidePdf: $('choose-slide-pdf'), slideDropzone: $('slide-dropzone'), slideFileList: $('slide-file-list'), explainSlides: $('explain-slides'),
   density: $('density'), cardMode: $('card-mode'), strategy: $('strategy'), language: $('language'), lectureHint: $('lecture-mode-hint'), standardCardDensity: $('standard-card-density'), standardPdfReading: $('standard-pdf-reading'),
   includeImages: $('include-images'), maxSourceImages: $('max-source-images'), standardImageOptions: $('standard-image-options'),
+  legacyOptions: $('legacy-lecture-options'), legacyIncludeText: $('legacy-include-text'), legacyDetailedGrouping: $('legacy-detailed-grouping'), legacySlideBySlide: $('legacy-slide-by-slide'),
   generate: $('generate'), progress: $('progress'), progressFill: $('progress-fill'), status: $('status'), error: $('error'), results: $('results')
 };
 
@@ -113,6 +115,9 @@ function captureSettings() {
     language: ui.language.value,
     includeImages: ui.includeImages.checked,
     maxSourceImages: ui.maxSourceImages.value,
+    legacyIncludeText: ui.legacyIncludeText.checked,
+    legacyDetailedGrouping: ui.legacyDetailedGrouping.checked,
+    legacySlideBySlide: ui.legacySlideBySlide.checked,
     activeInput: state.activeInput
   };
 }
@@ -129,12 +134,15 @@ function restoreSettings(saved) {
   ui.language.value = saved.language;
   ui.includeImages.checked = saved.includeImages;
   ui.maxSourceImages.value = saved.maxSourceImages;
+  ui.legacyIncludeText.checked = saved.legacyIncludeText;
+  ui.legacyDetailedGrouping.checked = saved.legacyDetailedGrouping;
+  ui.legacySlideBySlide.checked = saved.legacySlideBySlide;
 }
 
 function syncLectureOptions() {
   const lectureSelected = ui.cardMode.value === 'lecture';
   const lectureMode = lectureSelected && state.activeInput === 'pdf';
-  ui.lectureHint.hidden = !lectureMode;
+  ui.legacyOptions.hidden = !lectureMode;
   ui.standardCardDensity.hidden = lectureMode;
   ui.standardPdfReading.hidden = lectureMode;
   ui.standardImageOptions.hidden = lectureMode;
@@ -934,7 +942,8 @@ function bindEvents() {
   ui.clearKeys.addEventListener('click', clearKeys);
   ui.refreshModels.addEventListener('click', async () => { clearError(); try { await refreshModels(); } catch (error) { showError(error); } });
   ui.model.addEventListener('change', () => { updateModelMeta(); persistSettings(); });
-  [ui.density, ui.cardMode, ui.strategy, ui.language, ui.includeImages, ui.maxSourceImages]
+  [ui.density, ui.cardMode, ui.strategy, ui.language, ui.includeImages, ui.maxSourceImages,
+   ui.legacyIncludeText, ui.legacyDetailedGrouping, ui.legacySlideBySlide]
     .forEach(control => control.addEventListener('change', () => { syncLectureOptions(); persistSettings(); }));
   ui.generate.addEventListener('click', generate);
   ui.explainSlides.addEventListener('click', generate);
