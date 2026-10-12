@@ -32,14 +32,14 @@
         <div class="panel-heading"><span class="step">1</span><div><h2>Gemini</h2><p>One key is enough. Multiple keys rotate on quota errors.</p></div></div>
 
         <label for="api-keys">API key<span class="label-note">one per line</span></label>
-        <textarea id="api-keys" rows="3" autocomplete="off" spellcheck="false" placeholder="AIza…"></textarea>
+        <textarea id="api-keys" rows="3" autocomplete="off" spellcheck="false" placeholder="AQ.… or AIza…"></textarea>
         <div class="inline-actions">
           <label class="check"><input id="remember-keys" type="checkbox"> Remember on this device</label>
           <button id="check-keys" class="link-button" type="button">Check keys</button>
           <button id="save-keys" class="link-button" type="button">Save</button>
           <button id="clear-keys" class="link-button danger" type="button">Clear</button>
         </div>
-        <p class="privacy-mini">Keys are never committed or sent to a StudyTools server. Check keys tests only authentication, without uploading a PDF.</p>
+        <p class="privacy-mini">Keys are sent directly to Gemini, never to a StudyTools server. Check keys sends only a small “ping” to the selected model; it does not upload your PDF.</p>
         <p id="key-check-status" class="privacy-mini" aria-live="polite"></p>
 
         <div class="field-group model-field">
