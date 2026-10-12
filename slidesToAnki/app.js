@@ -57,6 +57,7 @@ const ui = {
   density: $('density'), cardMode: $('card-mode'), strategy: $('strategy'), language: $('language'), lectureHint: $('lecture-mode-hint'), standardCardDensity: $('standard-card-density'), standardPdfReading: $('standard-pdf-reading'),
   includeImages: $('include-images'), maxSourceImages: $('max-source-images'), standardImageOptions: $('standard-image-options'),
   legacyOptions: $('legacy-lecture-options'), legacyIncludeText: $('legacy-include-text'), legacyDetailedGrouping: $('legacy-detailed-grouping'), legacySlideBySlide: $('legacy-slide-by-slide'),
+  legacyCompressImages: $('legacy-compress-images'), legacyAutoCrop: $('legacy-auto-crop'), legacyMaxResolution: $('legacy-max-resolution'), legacyMaxKB: $('legacy-max-kb'),
   generate: $('generate'), progress: $('progress'), progressFill: $('progress-fill'), status: $('status'), error: $('error'), results: $('results')
 };
 
@@ -118,6 +119,10 @@ function captureSettings() {
     legacyIncludeText: ui.legacyIncludeText.checked,
     legacyDetailedGrouping: ui.legacyDetailedGrouping.checked,
     legacySlideBySlide: ui.legacySlideBySlide.checked,
+    legacyCompressImages: ui.legacyCompressImages.checked,
+    legacyAutoCrop: ui.legacyAutoCrop.checked,
+    legacyMaxResolution: Number(ui.legacyMaxResolution.value),
+    legacyMaxKB: Number(ui.legacyMaxKB.value),
     activeInput: state.activeInput
   };
 }
@@ -137,6 +142,10 @@ function restoreSettings(saved) {
   ui.legacyIncludeText.checked = saved.legacyIncludeText;
   ui.legacyDetailedGrouping.checked = saved.legacyDetailedGrouping;
   ui.legacySlideBySlide.checked = saved.legacySlideBySlide;
+  ui.legacyCompressImages.checked = saved.legacyCompressImages;
+  ui.legacyAutoCrop.checked = saved.legacyAutoCrop;
+  ui.legacyMaxResolution.value = saved.legacyMaxResolution;
+  ui.legacyMaxKB.value = saved.legacyMaxKB;
 }
 
 function syncLectureOptions() {
@@ -983,7 +992,8 @@ function bindEvents() {
   ui.refreshModels.addEventListener('click', async () => { clearError(); try { await refreshModels(); } catch (error) { showError(error); } });
   ui.model.addEventListener('change', () => { updateModelMeta(); persistSettings(); });
   [ui.density, ui.cardMode, ui.strategy, ui.language, ui.includeImages, ui.maxSourceImages,
-   ui.legacyIncludeText, ui.legacyDetailedGrouping, ui.legacySlideBySlide]
+   ui.legacyIncludeText, ui.legacyDetailedGrouping, ui.legacySlideBySlide,
+   ui.legacyCompressImages, ui.legacyAutoCrop, ui.legacyMaxResolution, ui.legacyMaxKB]
     .forEach(control => control.addEventListener('change', () => { syncLectureOptions(); persistSettings(); }));
   ui.generate.addEventListener('click', generate);
   ui.explainSlides.addEventListener('click', generate);
