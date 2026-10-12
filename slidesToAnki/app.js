@@ -19,7 +19,7 @@ import {
   safeDeckName,
   stableNumericId
 } from './lib/anki-utils.js';
-import { loadSettings, saveSettings } from './lib/settings.js';
+import { loadSettings, saveSettings } from './lib/settings.js?v=20261012-original-notetype';
 import {
   lectureGroupingWindows,
   buildWholeDocumentLectureGroupingPrompt,
@@ -31,7 +31,7 @@ import {
   normalizeLectureExplanation,
   legacyLectureNoteFields,
   buildLegacyLectureAnnotationPrompt
-} from './lib/lecture-notes.js';
+} from './lib/lecture-notes.js?v=20261012-original-notetype';
 
 const PDF_INLINE_LIMIT = 50 * 1024 * 1024;
 const PDF_INLINE_SAFETY_LIMIT = 47 * 1024 * 1024;
