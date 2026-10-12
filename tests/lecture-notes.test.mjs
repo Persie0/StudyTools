@@ -279,7 +279,7 @@ test('the first grouping analysis sees the entire original PDF rather than 8-pag
   assert.match(prompt, /ENTIRE attached lecture PDF/);
   assert.match(prompt, /1-based page numbers from 1 to 48/);
   assert.match(prompt, /pages 8 and 9/);
-  assert.match(prompt, /natural concept transitions/);
+  assert.match(prompt, /ORIGINAL GROUPING/);
   assert.match(prompt, /Write titles in German/);
   assert.ok(prompt.includes(String.fromCharCode(10)), 'instructions must have readable real newlines');
 });
