@@ -60,7 +60,7 @@ test('lecture prompts require full coverage, multimodal reasoning and thorough e
   assert.match(grouping, /24 through 29/);
   assert.match(grouping, /contiguous/i);
   const explaining = buildLectureExplanationPrompt({ pages: [24, 25], language: 'German' });
-  for (const phrase of ['ENTIRE group', 'formulas', 'diagrams', '<p>', 'Anki MathJax', 'same language']) {
+  for (const phrase of ['ENTIRE group', 'formulas', 'diagrams', '<p>', 'Anki MathJax', 'German']) {
     assert.ok(explaining.includes(phrase), 'Missing original group explanation guidance: ' + phrase);
   }
 });
@@ -269,7 +269,7 @@ test('window prompt recognizes continuing topics and avoids invented hard batch 
 test('the first grouping analysis sees the entire original PDF rather than 8-page chunks', () => {
   const prompt = buildWholeDocumentLectureGroupingPrompt({ pageCount: 48, language: 'German' });
   assert.match(prompt, /ENTIRE attached lecture PDF/);
-  assert.match(prompt, /original PDF pages from 1 to 48/);
+  assert.match(prompt, /1-based page numbers from 1 to 48/);
   assert.match(prompt, /pages 8 and 9/);
   assert.match(prompt, /natural concept transitions/);
   assert.match(prompt, /Write titles in German/);
