@@ -217,26 +217,56 @@ export class GeminiClient {
     this.cursor = 0;
   }
 
-  // Lightweight authentication probe, with a separate verdict for each key.
-  // It sends no PDFs, prompts, or user content and never returns key values.
-  async checkKeys() {
+  // Compare read and generation requests using exactly the transport used
+  // by StudyTools. Unlike a model-list check alone, this mirrors the minimal
+  // google-genai SDK ping used by translateLangs.
+  async checkKeys({ model = DEFAULT_MODEL } = {}) {
+    const modelId = normalizeModelId(model) || DEFAULT_MODEL;
     const results = [];
-    for (const entry of this.keys) {
+    const probe = async (url, init) => {
       try {
-        const response = await this.fetch(
-          'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1',
-          { method: 'GET', headers: { 'x-goog-api-key': entry.key } }
-        );
-        if (response.ok) {
-          results.push({ index: entry.index, ok: true, status: response.status, kind: 'valid', message: 'Accepted by Gemini API' });
-        } else {
-          const error = await responseError(response);
-          const classification = classifyApiError(response.status, `${error.reason} ${error.message}`, response);
-          results.push({ index: entry.index, ok: false, status: response.status, kind: classification.kind, reason: error.reason, message: error.message });
-        }
+        const response = await this.fetch(url, {
+          ...init,
+          cache: 'no-store',
+          credentials: 'omit'
+        });
+        if (response.ok) return { ok: true, status: response.status, kind: 'valid', reason: '', message: 'Accepted' };
+        const { message, reason } = await responseError(response);
+        const { kind } = classifyApiError(response.status, `${reason} ${message}`, response);
+        return { ok: false, status: response.status, kind, reason, message };
       } catch (error) {
-        results.push({ index: entry.index, ok: false, status: 0, kind: 'network', message: String(error?.message || error) });
+        return { ok: false, status: 0, kind: 'network', reason: '', message: String(error?.message || error) };
       }
+    };
+    for (const entry of this.keys) {
+      const headers = { 'x-goog-api-key': entry.key };
+      const list = await probe(
+        'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1',
+        { method: 'GET', headers }
+      );
+      const generation = await probe(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent`,
+        {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
+            generationConfig: { maxOutputTokens: 8 }
+          })
+        }
+      );
+      // Never include the key in the diagnostic output.
+      results.push({
+        index: entry.index,
+        model: modelId,
+        list,
+        generation,
+        ok: generation.ok,
+        status: generation.status,
+        kind: generation.kind,
+        reason: generation.reason,
+        message: generation.message
+      });
     }
     return results;
   }
@@ -343,7 +373,7 @@ export class GeminiClient {
         keyEntry.disabled = true;
         lastError = new Error(
           `Gemini rejected API key #${keyEntry.index} (HTTP ${response.status}${reason ? ` ${reason}` : ''}): ${message.replace(/[.!?\s]+$/, '')}. ` +
-          'Check the key in Google AI Studio. Old unrestricted Standard keys may need replacement or Gemini API restrictions.'
+          'Compare this browser request with the working SDK request using Check keys (never share key values).'
         );
         // Unlike a malformed request, an invalid key is not a reason to retry
         // the same key without responseMimeType; try the next key instead.
