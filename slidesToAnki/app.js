@@ -20,6 +20,14 @@ import {
   stableNumericId
 } from './lib/anki-utils.js';
 import { loadSettings, saveSettings } from './lib/settings.js';
+import {
+  LECTURE_GROUP_BATCH_PAGES,
+  buildLectureGroupingPrompt,
+  buildLectureExplanationPrompt,
+  normalizeLectureGroups,
+  normalizeLectureExplanation,
+  lectureBackHtml
+} from './lib/lecture-notes.js';
 
 const PDF_INLINE_LIMIT = 50 * 1024 * 1024;
 const PDF_INLINE_SAFETY_LIMIT = 47 * 1024 * 1024;
@@ -42,7 +50,7 @@ const ui = {
   inputTabs: [...document.querySelectorAll('[data-input-tab]')], inputPanels: [...document.querySelectorAll('[data-input-panel]')],
   fileInput: $('pdf-input'), choosePdfs: $('choose-pdfs'), dropzone: $('dropzone'), fileList: $('file-list'), textInput: $('text-input'), jsonInput: $('json-input'),
   slideFiles: $('slide-pdf-input'), chooseSlidePdf: $('choose-slide-pdf'), slideDropzone: $('slide-dropzone'), slideFileList: $('slide-file-list'), explainSlides: $('explain-slides'),
-  density: $('density'), cardMode: $('card-mode'), strategy: $('strategy'), language: $('language'),
+  density: $('density'), cardMode: $('card-mode'), strategy: $('strategy'), language: $('language'), lectureHint: $('lecture-mode-hint'),
   includeImages: $('include-images'), maxSourceImages: $('max-source-images'),
   generate: $('generate'), progress: $('progress'), progressFill: $('progress-fill'), status: $('status'), error: $('error'), results: $('results'),
   keyHelp: $('key-help')
@@ -119,6 +127,16 @@ function restoreSettings(saved) {
   ui.language.value = saved.language;
   ui.includeImages.checked = saved.includeImages;
   ui.maxSourceImages.value = saved.maxSourceImages;
+}
+
+function syncLectureOptions() {
+  const lectureMode = ui.cardMode.value === 'lecture';
+  ui.lectureHint.hidden = !lectureMode;
+  // All original source images are mandatory in lecture-notes mode. Preserve
+  // the user's ordinary settings for when they switch back to regular cards.
+  for (const control of [ui.density, ui.strategy, ui.includeImages, ui.maxSourceImages]) {
+    control.disabled = lectureMode;
+  }
 }
 
 function updateGenerateState() {
@@ -714,7 +732,7 @@ function bindEvents() {
   ui.refreshModels.addEventListener('click', async () => { clearError(); try { await refreshModels(); } catch (error) { showError(error); } });
   ui.model.addEventListener('change', () => { updateModelMeta(); persistSettings(); });
   [ui.density, ui.cardMode, ui.strategy, ui.language, ui.includeImages, ui.maxSourceImages]
-    .forEach(control => control.addEventListener('change', persistSettings));
+    .forEach(control => control.addEventListener('change', () => { syncLectureOptions(); persistSettings(); }));
   ui.generate.addEventListener('click', generate);
   ui.explainSlides.addEventListener('click', generate);
   ui.chooseSlidePdf.addEventListener('click', event => { event.stopPropagation(); ui.slideFiles.click(); });
@@ -740,6 +758,7 @@ function init() {
   let savedSettings = null;
   try { savedSettings = loadSettings(localStorage); } catch (_) {}
   restoreSettings(savedSettings);
+  syncLectureOptions();
   const storedModel = savedSettings?.model || readStoredValue(MODEL_STORAGE) || DEFAULT_MODEL;
   state.models = mergeModelLists([{ id: storedModel, name: `models/${storedModel}` }], fallbackModelList());
   renderModelOptions(storedModel);
