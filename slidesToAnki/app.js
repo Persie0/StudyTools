@@ -51,7 +51,7 @@ const ui = {
   fileInput: $('pdf-input'), choosePdfs: $('choose-pdfs'), dropzone: $('dropzone'), fileList: $('file-list'), textInput: $('text-input'), jsonInput: $('json-input'),
   slideFiles: $('slide-pdf-input'), chooseSlidePdf: $('choose-slide-pdf'), slideDropzone: $('slide-dropzone'), slideFileList: $('slide-file-list'), explainSlides: $('explain-slides'),
   density: $('density'), cardMode: $('card-mode'), strategy: $('strategy'), language: $('language'), lectureHint: $('lecture-mode-hint'),
-  includeImages: $('include-images'), maxSourceImages: $('max-source-images'),
+  includeImages: $('include-images'), maxSourceImages: $('max-source-images'), standardImageOptions: $('standard-image-options'),
   generate: $('generate'), progress: $('progress'), progressFill: $('progress-fill'), status: $('status'), error: $('error'), results: $('results'),
   keyHelp: $('key-help')
 };
@@ -133,6 +133,7 @@ function syncLectureOptions() {
   const lectureSelected = ui.cardMode.value === 'lecture';
   const lectureMode = lectureSelected && state.activeInput === 'pdf';
   ui.lectureHint.hidden = !lectureSelected;
+  ui.standardImageOptions.hidden = lectureMode;
   // All original source images are mandatory in lecture-notes mode. Preserve
   // the user's ordinary settings for when they switch back to regular cards.
   for (const control of [ui.density, ui.strategy, ui.includeImages, ui.maxSourceImages]) {
