@@ -15,7 +15,8 @@ Static, browser-first utilities for PDFs and Anki decks.
 - Cited PDF pages can be embedded as real `.apkg` media files.
 - Multiple Gemini API keys can be entered (one per line) and rotate on temporary quota/overload errors.
 - API keys are sent in the `x-goog-api-key` header rather than being placed in request URLs.
-- Saving keys is **opt-in**. By default they remain only in the current browser tab.
+- All deck selections (model, density, card style, PDF reading mode, language, images/card, source images and active tab) automatically persist in browser localStorage and are restored on reload. Files, pasted text and JSON are not persisted.
+- Saving keys is **opt-in**. By default they remain only in the current browser tab. Turning on **Remember on this device** now saves the key immediately and updates storage as you edit it; turning it off removes saved keys.
 
 ### Inputs
 
