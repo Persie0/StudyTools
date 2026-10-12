@@ -118,6 +118,21 @@ export function normalizeLectureGroups(payload, start, end) {
   return proposed.sort((a, b) => a.pages[0] - b.pages[0]);
 }
 
+// Reject empty or severely incomplete whole-document outlines so one weak AI
+// response does not produce dozens of isolated fallback pages without context.
+export function isUsableLectureOutline(payload, pageCount) {
+  const total = Math.max(1, Math.floor(Number(pageCount) || 1));
+  const raw = Array.isArray(payload) ? payload :
+    Array.isArray(payload?.groups) ? payload.groups :
+    Array.isArray(payload?.sections) ? payload.sections : [];
+  if (!raw.length) return false;
+  const covered = new Set();
+  for (const item of raw) {
+    for (const page of normalizePages(item?.pages, total)) covered.add(page);
+  }
+  return covered.size >= Math.ceil(total * 0.7);
+}
+
 // Prefer one document-wide outline, just like the original slides-to-Anki
 // workflow. Fixed-size image windows are a fallback, not semantic boundaries.
 export function buildWholeDocumentLectureGroupingPrompt({ pageCount, language = 'auto' }) {
