@@ -130,8 +130,9 @@ function restoreSettings(saved) {
 }
 
 function syncLectureOptions() {
-  const lectureMode = ui.cardMode.value === 'lecture';
-  ui.lectureHint.hidden = !lectureMode;
+  const lectureSelected = ui.cardMode.value === 'lecture';
+  const lectureMode = lectureSelected && state.activeInput === 'pdf';
+  ui.lectureHint.hidden = !lectureSelected;
   // All original source images are mandatory in lecture-notes mode. Preserve
   // the user's ordinary settings for when they switch back to regular cards.
   for (const control of [ui.density, ui.strategy, ui.includeImages, ui.maxSourceImages]) {
@@ -204,6 +205,7 @@ function switchInput(input) {
   }
   for (const panel of ui.inputPanels) panel.hidden = panel.dataset.inputPanel !== state.activeInput;
   document.body.dataset.inputMode = state.activeInput;
+  syncLectureOptions();
   updateGenerateState();
   persistSettings();
 }
@@ -569,7 +571,9 @@ function lectureAnkiModel() {
 }
 
 async function createDeck(cards, deckName, { pdf = null, fileIndex = 0, lecture = false, imageCache = null } = {}) {
-  if (!cards.length) throw new Error('Gemini did not produce any valid flashcards. Try Detailed density or another model.');
+  if (!cards.length) throw new Error(lecture
+    ? 'No lecture-note cards could be created from this PDF.'
+    : 'Gemini did not produce any valid flashcards. Try Detailed density or another model.');
   if (typeof Model === 'undefined' || typeof Deck === 'undefined' || typeof Package === 'undefined') throw new Error('Anki export library did not load. Reload the page and try again.');
   if (!window.SQL && sqlReady) await sqlReady;
   if (!window.SQL) throw new Error('SQL.js did not load, so the Anki package cannot be built.');
@@ -590,7 +594,7 @@ async function createDeck(cards, deckName, { pdf = null, fileIndex = 0, lecture 
   }
 
   setStatus(`Building ${cards.length} Anki cards…`, 92);
-  pkg.writeToFile(`${deckName}.apkg`);
+  await pkg.writeToFile(`${deckName}.apkg`);
   return cards.length;
 }
 
