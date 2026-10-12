@@ -88,7 +88,7 @@ export function reconcileLectureWindowGroups(windows, pageCount) {
 
 
 // AI-proposed grouping is advisory: every original page appears exactly once.
-export function normalizeLectureGroups(payload, start, end) {
+export function normalizeLectureGroups(payload, start, end, { includeMissing = true, maxPages = LECTURE_GROUP_MAX_PAGES } = {}) {
   const raw = Array.isArray(payload) ? payload :
     Array.isArray(payload?.groups) ? payload.groups :
     Array.isArray(payload?.sections) ? payload.sections : [];
@@ -105,15 +105,18 @@ export function normalizeLectureGroups(payload, start, end) {
       run = [];
     };
     for (const page of pages) {
-      if (run.length && (page !== run[run.length - 1] + 1 || run.length >= LECTURE_GROUP_MAX_PAGES)) flush();
+      if (run.length && (page !== run[run.length - 1] + 1 || run.length >= maxPages)) flush();
       run.push(page);
       assigned.add(page);
     }
     flush();
   }
-  // Never silently omit content that the AI failed to classify.
-  for (let page = start; page <= end; page++) {
-    if (!assigned.has(page)) proposed.push({ title: 'Page ' + page, pages: [page] });
+  // Normal modes retain every page; legacy mode intentionally skips non-content
+  // slides and intermediate reveal frames when the whole-PDF model filters them.
+  if (includeMissing) {
+    for (let page = start; page <= end; page++) {
+      if (!assigned.has(page)) proposed.push({ title: 'Page ' + page, pages: [page] });
+    }
   }
   return proposed.sort((a, b) => a.pages[0] - b.pages[0]);
 }
@@ -135,7 +138,7 @@ export function isUsableLectureOutline(payload, pageCount) {
 
 // Prefer one document-wide outline, just like the original slides-to-Anki
 // workflow. Fixed-size image windows are a fallback, not semantic boundaries.
-export function buildWholeDocumentLectureGroupingPrompt({ pageCount, language = 'auto' }) {
+export function buildWholeDocumentLectureGroupingPrompt({ pageCount, language = 'auto', detailedGrouping = false } = {}) {
   const count = Math.max(1, Math.floor(Number(pageCount) || 1));
   const languageRule = language === 'auto'
     ? 'Write titles in the primary language of the PDF.' : 'Write titles in ' + language + '.';
@@ -144,11 +147,15 @@ export function buildWholeDocumentLectureGroupingPrompt({ pageCount, language = 
     'Identify the logical outline, continuity between neighboring slides, incremental reveals and transitions between topics.',
     'Return groups of consecutive ORIGINAL PDF pages representing focused concepts or closely related explanations.',
     'No fixed-size processing boundaries exist: adjacent pages (including pages 8 and 9, 16 and 17, etc.) may belong together.',
-    'Prefer small cohesive groups of 1–4 pages. Longer topics should be divided at natural concept transitions, not at arbitrary page numbers.',
+    detailedGrouping
+      ? 'Use DETAILED GROUPING: small, focused groups of 1–4 slides, each covering one or two key concepts. Split longer topics at concept transitions.'
+      : 'Use ORIGINAL GROUPING: group all consecutive slides that cover one coherent topic. Do not split solely to fit 4 pages.',
     'Each group needs a concise, descriptive title suitable for the front of an Anki card.',
     'Use all substantive slide content, including diagrams, formula-heavy pages, conclusions and summaries.',
-    'Cover ALL ' + count + ' original PDF pages exactly once in ascending order. Include title, divider and agenda pages with a neighboring group where practical rather than discarding them.',
-    'Do not skip or repeat pages, and use ORIGINAL 1-based page numbers from 1 to ' + count + '.',
+    'As in the original converter, REMOVE only genuinely content-free title, agenda, section-divider, acknowledgements and thank-you slides.',
+    'For incremental reveal slides of the SAME concept, retain only the final/most complete visual slide in the pages list.',
+    'Do not discard substantive summaries, explanations, conclusions or diagram pages. Do not skip useful learning material.',
+    'Do not repeat included page numbers, and use ORIGINAL 1-based page numbers from 1 to ' + count + '.',
     languageRule,
     'Return strictly valid JSON only:',
     '{"groups":[{"title":"First concept","pages":[1,2]},{"title":"Next concept","pages":[3,4]}]}',
