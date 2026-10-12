@@ -148,7 +148,10 @@ const LATEX_JSON_COMMANDS = new Set([
   'epsilon', 'sigma', 'pi', 'lambda', 'mu', 'omega',
   'partial', 'infty', 'cdot', 'cdots', 'ldots',
   'leq', 'geq', 'approx', 'leftarrow', 'overline',
-  'mathcal', 'mathit', 'mathrm', 'mathsf', 'mathrm'
+  'mathcal', 'mathit', 'mathrm', 'mathsf',
+  'bmod', 'backslash', 'breve', 'bigcup', 'bigcap', 'bfseries',
+  'rceil', 'rfloor', 'rvert', 'rVert', 'rbrace', 'rightleftharpoons',
+  'nexists', 'nRightarrow', 'textcolor', 'textstyle', 'tiny', 'therefore'
 ]);
 
 export function repairModelJson(text) {
