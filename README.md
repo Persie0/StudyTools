@@ -13,7 +13,9 @@ Static, browser-first utilities for PDFs and Anki decks.
 - Other restored defaults: **Compact** card density (closest to original non-detailed grouping), **Topic explanations**, **Detect from source** language, embedded source pages, and **All cited** pages per card.
 - Generated cards include source page numbers.
 - Cited PDF pages can be embedded as real `.apkg` media files.
-- Multiple Gemini API keys can be entered (one per line) and rotate on temporary quota/overload errors.
+- Multiple Gemini API keys can be entered (one per line, comma-separated, or pasted as `GEMINI_API_KEY=...`). Rejected/expired API keys (including Google's HTTP 400 `API_KEY_INVALID`) are skipped in favor of the next key, while temporary quota/overload errors use key rotation.
+- **Check keys** verifies each key independently using Gemini's `models.list` endpoint without sending PDFs or prompts. It reports only key numbers and result codes, never the key values. A successful key check verifies authentication, not model-specific generation quota.
+- If a previously working key now returns HTTP 400, inspect its status in [Google AI Studio](https://aistudio.google.com/app/apikey). In 2026, Google discontinued unrestricted legacy Standard keys; use a current Gemini authorization key or a supported Gemini-API-restricted key. The `translateLangs` GitHub Actions `GEMINI_API_KEY` secret is separate from the keys saved in this browser.
 - API keys are sent in the `x-goog-api-key` header rather than being placed in request URLs.
 - All deck selections (model, density, card style, PDF reading mode, language, images/card, source images and active tab) automatically persist in browser localStorage and are restored on reload. Files, pasted text and JSON are not persisted.
 - Saving keys is **opt-in**. By default they remain only in the current browser tab. Turning on **Remember on this device** now saves the key immediately and updates storage as you edit it; turning it off removes saved keys.
