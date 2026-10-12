@@ -28,7 +28,6 @@ import {
   reconcileLectureWindowGroups,
   buildLectureGroupingPrompt,
   buildLectureExplanationPrompt,
-  normalizeLectureGroups,
   normalizeLectureExplanation,
   lectureBackHtml
 } from './lib/lecture-notes.js';
