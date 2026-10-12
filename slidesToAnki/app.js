@@ -37,7 +37,7 @@ function readStoredValue(key) {
 
 const $ = id => document.getElementById(id);
 const ui = {
-  apiKeys: $('api-keys'), rememberKeys: $('remember-keys'), saveKeys: $('save-keys'), clearKeys: $('clear-keys'),
+  apiKeys: $('api-keys'), rememberKeys: $('remember-keys'), checkKeys: $('check-keys'), keyCheckStatus: $('key-check-status'), saveKeys: $('save-keys'), clearKeys: $('clear-keys'),
   model: $('model-select'), refreshModels: $('refresh-models'), modelMeta: $('model-meta'),
   inputTabs: [...document.querySelectorAll('[data-input-tab]')], inputPanels: [...document.querySelectorAll('[data-input-panel]')],
   fileInput: $('pdf-input'), choosePdfs: $('choose-pdfs'), dropzone: $('dropzone'), fileList: $('file-list'), textInput: $('text-input'), jsonInput: $('json-input'),
@@ -632,6 +632,34 @@ async function generate() {
   }
 }
 
+// Display a per-key verdict without revealing API key values or sending files.
+async function checkGeminiKeys() {
+  if (!apiKeys()) {
+    ui.keyCheckStatus.textContent = 'Add a Gemini API key first.';
+    return;
+  }
+  ui.checkKeys.disabled = true;
+  ui.keyCheckStatus.textContent = 'Checking Gemini API keys…';
+  try {
+    const results = await new GeminiClient(apiKeys()).checkKeys();
+    ui.keyCheckStatus.textContent = results.map(result => {
+      const key = `Key #${result.index}`;
+      if (result.ok) return `${key}: valid (Gemini API accepted it)`;
+      if (result.kind === 'auth' && result.status === 400) {
+        return `${key}: invalid/revoked (HTTP 400). Re-copy an active key in Google AI Studio, or replace a blocked legacy Standard key.`;
+      }
+      if (result.kind === 'auth') return `${key}: rejected (HTTP ${result.status}). Check Gemini API and application restrictions.`;
+      if (result.kind === 'rate-limit') return `${key}: quota/rate limit (HTTP ${result.status}); authentication could not be confirmed.`;
+      if (result.kind === 'network') return `${key}: network or browser request failed. Check connectivity, extensions, and CORS.`;
+      return `${key}: Gemini API returned HTTP ${result.status} (${result.kind}).`;
+    }).join(' | ');
+  } catch (error) {
+    ui.keyCheckStatus.textContent = `Could not check keys: ${error?.message || error}`;
+  } finally {
+    ui.checkKeys.disabled = false;
+  }
+}
+
 function saveKeys(announce = true) {
   try {
     if (!ui.rememberKeys.checked) {
@@ -650,6 +678,7 @@ function saveKeys(announce = true) {
 
 function clearKeys() {
   ui.apiKeys.value = '';
+  ui.keyCheckStatus.textContent = '';
   ui.rememberKeys.checked = false;
   try {
     localStorage.removeItem(API_KEY_STORAGE);
@@ -675,11 +704,12 @@ function bindEvents() {
     renderFiles();
     updateGenerateState();
   });
-  ui.apiKeys.addEventListener('input', () => { updateGenerateState(); if (ui.rememberKeys.checked) saveKeys(false); });
+  ui.apiKeys.addEventListener('input', () => { ui.keyCheckStatus.textContent = ''; updateGenerateState(); if (ui.rememberKeys.checked) saveKeys(false); });
   ui.rememberKeys.addEventListener('change', () => saveKeys());
   ui.apiKeys.addEventListener('change', () => { if (apiKeys()) refreshModels().catch(error => console.warn('Model discovery failed; using curated fallback list.', error)); });
   ui.textInput.addEventListener('input', updateGenerateState);
   ui.jsonInput.addEventListener('input', updateGenerateState);
+  ui.checkKeys.addEventListener('click', checkGeminiKeys);
   ui.saveKeys.addEventListener('click', () => saveKeys());
   ui.clearKeys.addEventListener('click', clearKeys);
   ui.refreshModels.addEventListener('click', async () => { clearError(); try { await refreshModels(); } catch (error) { showError(error); } });
