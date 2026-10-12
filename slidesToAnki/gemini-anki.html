@@ -35,10 +35,12 @@
         <textarea id="api-keys" rows="3" autocomplete="off" spellcheck="false" placeholder="AIza…"></textarea>
         <div class="inline-actions">
           <label class="check"><input id="remember-keys" type="checkbox"> Remember on this device</label>
+          <button id="check-keys" class="link-button" type="button">Check keys</button>
           <button id="save-keys" class="link-button" type="button">Save</button>
           <button id="clear-keys" class="link-button danger" type="button">Clear</button>
         </div>
-        <p class="privacy-mini">Keys are never committed or sent to a StudyTools server.</p>
+        <p class="privacy-mini">Keys are never committed or sent to a StudyTools server. Check keys tests only authentication, without uploading a PDF.</p>
+        <p id="key-check-status" class="privacy-mini" aria-live="polite"></p>
 
         <div class="field-group model-field">
           <div class="label-row"><label for="model-select">Model</label><button id="refresh-models" class="link-button" type="button">Refresh all</button></div>
