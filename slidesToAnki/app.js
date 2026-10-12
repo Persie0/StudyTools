@@ -21,7 +21,8 @@ import {
 } from './lib/anki-utils.js';
 import { loadSettings, saveSettings } from './lib/settings.js';
 import {
-  LECTURE_GROUP_BATCH_PAGES,
+  lectureGroupingWindows,
+  reconcileLectureWindowGroups,
   buildLectureGroupingPrompt,
   buildLectureExplanationPrompt,
   normalizeLectureGroups,
@@ -446,60 +447,85 @@ async function generateLectureCards(client, model, pdf) {
     textByPage[page] = await extractLecturePageText(pdf, page);
   }
 
-  const cards = [];
-  // Avoid retaining hundreds of high-resolution JPEGs in memory for very large PDFs.
-  // For larger files the final Anki export can render pages again, batch by batch.
+  // Group the WHOLE document first, using overlapping eight-page windows
+  // with four pages of context shared between consecutive calls. Source pages
+  // 8 and 9 are seen together, so the old hard eight-page boundary disappears.
   const imageBytes = new Map();
   const cacheForExport = pdf.numPages <= 80;
-  for (let start = 1; start <= pdf.numPages; start += LECTURE_GROUP_BATCH_PAGES) {
-    const end = Math.min(pdf.numPages, start + LECTURE_GROUP_BATCH_PAGES - 1);
+  const recentImages = new Map();
+  async function getPageJpeg(page) {
+    if (imageBytes.has(page)) return imageBytes.get(page);
+    if (recentImages.has(page)) return recentImages.get(page);
+    const bytes = await renderPdfPage(pdf, page, 1500);
+    if (cacheForExport) {
+      imageBytes.set(page, bytes);
+    } else {
+      recentImages.set(page, bytes);
+      // Keep overlap pages for the next grouping call without storing the
+      // entire lecture in memory; larger PDFs re-render for final export.
+      while (recentImages.size > 12) recentImages.delete(recentImages.keys().next().value);
+    }
+    return bytes;
+  }
+
+  const windows = lectureGroupingWindows(pdf.numPages);
+  const windowResults = [];
+  for (let index = 0; index < windows.length; index++) {
+    const { start, end } = windows[index];
     const pages = Array.from({ length: end - start + 1 }, (_, i) => start + i);
-    setStatus('Reading and grouping slide images ' + start + '–' + end + '…',
-      17 + ((start - 1) / pdf.numPages) * 25);
+    setStatus('Comparing related slides ' + start + '–' + end +
+      ' (overlapping context, window ' + (index + 1) + '/' + windows.length + ')…',
+      17 + (index / windows.length) * 25);
 
     const images = [];
-    const batchBytes = new Map();
     for (const page of pages) {
-      const bytes = await renderPdfPage(pdf, page, 1500);
-      batchBytes.set(page, bytes);
-      if (cacheForExport) imageBytes.set(page, bytes);
+      const bytes = await getPageJpeg(page);
       images.push({ mimeType: 'image/jpeg', data: bytesToBase64(bytes) });
     }
 
-    let grouping = null;
+    let payload = null;
     try {
       const prompt = [
         buildLectureGroupingPrompt({ start, end, language: ui.language.value }),
         lectureTextContext(textByPage, pages, 2400)
       ].join('\n\n');
-      grouping = await client.generateJson({ model, prompt, images });
+      payload = await client.generateJson({ model, prompt, images });
     } catch (error) {
-      // Grouping is optional: never drop a page when this auxiliary call fails.
-      console.warn('Could not group PDF pages ' + start + '–' + end + '; using individual page cards.', error);
+      // Other overlapping windows can still supply the boundary decisions.
+      console.warn('Could not group PDF pages ' + start + '–' + end +
+        '; recovering groups from neighboring windows.', error);
     }
-    const groups = normalizeLectureGroups(grouping, start, end);
-    for (const group of groups) {
-      setStatus('Teaching topic from PDF pages ' + group.pages.join(', ') + '…',
-        42 + (group.pages[0] / pdf.numPages) * 24);
-      const groupImages = group.pages.map(page => ({
-        mimeType: 'image/jpeg', data: bytesToBase64(batchBytes.get(page))
-      }));
-      const prompt = [
-        buildLectureExplanationPrompt({ pages: group.pages, language: ui.language.value }),
-        lectureTextContext(textByPage, group.pages)
-      ].join('\n\n');
-      let explanation;
-      try {
-        explanation = normalizeLectureExplanation(
-          await client.generateJson({ model, prompt, images: groupImages })
-        );
-      } catch (error) {
-        throw new Error('Could not generate a detailed explanation for pages ' +
-          group.pages.join(', ') + ': ' + (error?.message || error));
-      }
-      cards.push({ title: explanation.title || group.title, pages: group.pages,
-        textByPage, explanation, tags: [] });
+    windowResults.push({ start, end, payload });
+  }
+
+  // Reconcile all overlapping suggestions before explaining a single topic.
+  // This allows e.g. a card spanning original pages 7–10.
+  const groups = reconcileLectureWindowGroups(windowResults, pdf.numPages);
+  const cards = [];
+  for (let index = 0; index < groups.length; index++) {
+    const group = groups[index];
+    setStatus('Teaching topic ' + (index + 1) + '/' + groups.length +
+      ' from PDF pages ' + group.pages.join(', ') + '…',
+      42 + (index / Math.max(1, groups.length)) * 24);
+    const groupImages = [];
+    for (const page of group.pages) {
+      groupImages.push({ mimeType: 'image/jpeg', data: bytesToBase64(await getPageJpeg(page)) });
     }
+    const prompt = [
+      buildLectureExplanationPrompt({ pages: group.pages, language: ui.language.value }),
+      lectureTextContext(textByPage, group.pages)
+    ].join('\n\n');
+    let explanation;
+    try {
+      explanation = normalizeLectureExplanation(
+        await client.generateJson({ model, prompt, images: groupImages })
+      );
+    } catch (error) {
+      throw new Error('Could not generate a detailed explanation for pages ' +
+        group.pages.join(', ') + ': ' + (error?.message || error));
+    }
+    cards.push({ title: explanation.title || group.title, pages: group.pages,
+      textByPage, explanation, tags: [] });
   }
   return { cards, imageBytes };
 }
