@@ -2,6 +2,90 @@ import { escapeHtml, normalizePages } from './anki-utils.js';
 
 export const LECTURE_GROUP_MAX_PAGES = 4;
 export const LECTURE_GROUP_BATCH_PAGES = 8;
+export const LECTURE_GROUP_OVERLAP_PAGES = 4;
+
+// Eight pages is a per-request visual context limit, never a topic boundary.
+// Overlap ensures pages 8/9, 12/13, ... appear together in another request.
+export function lectureGroupingWindows(pageCount) {
+  const total = Math.max(0, Math.floor(Number(pageCount) || 0));
+  const windows = [];
+  if (!total) return windows;
+  const step = LECTURE_GROUP_BATCH_PAGES - LECTURE_GROUP_OVERLAP_PAGES;
+  for (let start = 1; start <= total; start += step) {
+    const end = Math.min(total, start + LECTURE_GROUP_BATCH_PAGES - 1);
+    windows.push({ start, end });
+    if (end === total) break;
+  }
+  return windows;
+}
+
+// Reconcile overlapping AI suggestions into a single document-wide sequence.
+// Adjacent pages are joined only if the most centrally positioned windows that
+// classify BOTH pages agree. Missing/failed AI responses cannot force a split
+// against valid evidence from another window. Every PDF page appears once.
+export function reconcileLectureWindowGroups(windows, pageCount) {
+  const total = Math.max(0, Math.floor(Number(pageCount) || 0));
+  if (!total) return [];
+  const votes = new Map();
+  const titles = [];
+  for (const window of windows || []) {
+    const start = Math.max(1, Number(window?.start) || 1);
+    const end = Math.min(total, Number(window?.end) || total);
+    if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) continue;
+    const raw = Array.isArray(window?.payload) ? window.payload
+      : Array.isArray(window?.payload?.groups) ? window.payload.groups
+      : Array.isArray(window?.payload?.sections) ? window.payload.sections : [];
+    const assigned = new Map();
+    for (let i = 0; i < raw.length; i++) {
+      const item = raw[i];
+      const pages = normalizePages(item?.pages, total)
+        .filter(page => page >= start && page <= end && !assigned.has(page));
+      if (!pages.length) continue;
+      const title = String(item?.title || item?.name || '').trim().slice(0, 180);
+      for (const page of pages) assigned.set(page, i);
+      if (title) titles.push({ title, pages, start, end });
+    }
+    for (let boundary = start; boundary < end; boundary++) {
+      if (!assigned.has(boundary) || !assigned.has(boundary + 1)) continue;
+      const record = {
+        joined: assigned.get(boundary) === assigned.get(boundary + 1),
+        // Prefer assessments where both pages are away from window edges.
+        depth: Math.min(boundary - start + 1, end - boundary)
+      };
+      if (!votes.has(boundary)) votes.set(boundary, []);
+      votes.get(boundary).push(record);
+    }
+  }
+
+  const groups = [];
+  let pages = [1];
+  const flush = () => {
+    const matching = titles.map(item => {
+      const overlap = item.pages.filter(page => pages.includes(page)).length;
+      const depth = Math.min(pages[0] - item.start + 1, item.end - pages[pages.length - 1] + 1);
+      return { ...item, overlap, depth };
+    }).filter(item => item.overlap);
+    matching.sort((a, b) => b.overlap - a.overlap || b.depth - a.depth || a.start - b.start);
+    const fallback = pages.length === 1 ? 'Page ' + pages[0] :
+      'Pages ' + pages[0] + '–' + pages[pages.length - 1];
+    groups.push({ title: matching[0]?.title || fallback, pages });
+  };
+  for (let boundary = 1; boundary < total; boundary++) {
+    const options = votes.get(boundary) || [];
+    const depth = Math.max(0, ...options.map(option => option.depth));
+    const strongest = options.filter(option => option.depth === depth);
+    const joined = strongest.length > 0 && strongest.every(option => option.joined);
+    if (joined && pages.length < LECTURE_GROUP_MAX_PAGES) {
+      pages.push(boundary + 1);
+    } else {
+      flush();
+      pages = [boundary + 1];
+    }
+  }
+  flush();
+  return groups;
+}
+
 
 // AI-proposed grouping is advisory: every original page appears exactly once.
 export function normalizeLectureGroups(payload, start, end) {
@@ -34,12 +118,52 @@ export function normalizeLectureGroups(payload, start, end) {
   return proposed.sort((a, b) => a.pages[0] - b.pages[0]);
 }
 
+// Reject empty or severely incomplete whole-document outlines so one weak AI
+// response does not produce dozens of isolated fallback pages without context.
+export function isUsableLectureOutline(payload, pageCount) {
+  const total = Math.max(1, Math.floor(Number(pageCount) || 1));
+  const raw = Array.isArray(payload) ? payload :
+    Array.isArray(payload?.groups) ? payload.groups :
+    Array.isArray(payload?.sections) ? payload.sections : [];
+  if (!raw.length) return false;
+  const covered = new Set();
+  for (const item of raw) {
+    for (const page of normalizePages(item?.pages, total)) covered.add(page);
+  }
+  return covered.size >= Math.ceil(total * 0.7);
+}
+
+// Prefer one document-wide outline, just like the original slides-to-Anki
+// workflow. Fixed-size image windows are a fallback, not semantic boundaries.
+export function buildWholeDocumentLectureGroupingPrompt({ pageCount, language = 'auto' }) {
+  const count = Math.max(1, Math.floor(Number(pageCount) || 1));
+  const languageRule = language === 'auto'
+    ? 'Write titles in the primary language of the PDF.' : 'Write titles in ' + language + '.';
+  return [
+    'First analyze the ENTIRE attached lecture PDF as one coherent document, BEFORE deciding where individual Anki cards begin or end.',
+    'Identify the logical outline, continuity between neighboring slides, incremental reveals and transitions between topics.',
+    'Return groups of consecutive ORIGINAL PDF pages representing focused concepts or closely related explanations.',
+    'No fixed-size processing boundaries exist: adjacent pages (including pages 8 and 9, 16 and 17, etc.) may belong together.',
+    'Prefer small cohesive groups of 1–4 pages. Longer topics should be divided at natural concept transitions, not at arbitrary page numbers.',
+    'Each group needs a concise, descriptive title suitable for the front of an Anki card.',
+    'Use all substantive slide content, including diagrams, formula-heavy pages, conclusions and summaries.',
+    'Cover ALL ' + count + ' original PDF pages exactly once in ascending order. Include title, divider and agenda pages with a neighboring group where practical rather than discarding them.',
+    'Do not skip or repeat pages, and use ORIGINAL 1-based page numbers from 1 to ' + count + '.',
+    languageRule,
+    'Return strictly valid JSON only:',
+    '{"groups":[{"title":"First concept","pages":[1,2]},{"title":"Next concept","pages":[3,4]}]}',
+    'The numbers in the example are placeholders. Analyze the PDF and provide real topic boundaries for the entire document.'
+  ].join('\n');
+}
+
 export function buildLectureGroupingPrompt({ start, end, language = 'auto' }) {
   const languageRule = language === 'auto'
     ? 'Use the main language of the original slides.' : 'Use ' + language + '.';
   return [
     'Group these lecture slides into cohesive Anki study-note cards.',
     'The attached images represent ORIGINAL PDF pages ' + start + ' through ' + end + ', in that order.',
+    'This is an OVERLAPPING WINDOW, not a self-contained chapter. Topic groups may continue into pages outside this window.',
+    'Do not invent topic boundaries at the first or last page of this window. Compare adjacent pages and group coherent neighbors.',
     'Create one card per focused concept, usually 1–3 CONTIGUOUS pages, never more than 4 pages.',
     'Use a short descriptive concept/topic title for the front of each card.',
     'INCLUDE EVERY original PDF page exactly once, even administrative pages. Attach section dividers to the next topic when possible.',
