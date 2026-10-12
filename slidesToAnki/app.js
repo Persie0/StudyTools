@@ -53,7 +53,7 @@ const ui = {
   inputTabs: [...document.querySelectorAll('[data-input-tab]')], inputPanels: [...document.querySelectorAll('[data-input-panel]')],
   fileInput: $('pdf-input'), choosePdfs: $('choose-pdfs'), dropzone: $('dropzone'), fileList: $('file-list'), textInput: $('text-input'), jsonInput: $('json-input'),
   slideFiles: $('slide-pdf-input'), chooseSlidePdf: $('choose-slide-pdf'), slideDropzone: $('slide-dropzone'), slideFileList: $('slide-file-list'), explainSlides: $('explain-slides'),
-  density: $('density'), cardMode: $('card-mode'), strategy: $('strategy'), language: $('language'), lectureHint: $('lecture-mode-hint'),
+  density: $('density'), cardMode: $('card-mode'), strategy: $('strategy'), language: $('language'), lectureHint: $('lecture-mode-hint'), standardCardDensity: $('standard-card-density'), standardPdfReading: $('standard-pdf-reading'),
   includeImages: $('include-images'), maxSourceImages: $('max-source-images'), standardImageOptions: $('standard-image-options'),
   generate: $('generate'), progress: $('progress'), progressFill: $('progress-fill'), status: $('status'), error: $('error'), results: $('results'),
   keyHelp: $('key-help')
@@ -135,7 +135,9 @@ function restoreSettings(saved) {
 function syncLectureOptions() {
   const lectureSelected = ui.cardMode.value === 'lecture';
   const lectureMode = lectureSelected && state.activeInput === 'pdf';
-  ui.lectureHint.hidden = !lectureSelected;
+  ui.lectureHint.hidden = !lectureMode;
+  ui.standardCardDensity.hidden = lectureMode;
+  ui.standardPdfReading.hidden = lectureMode;
   ui.standardImageOptions.hidden = lectureMode;
   // All original source images are mandatory in lecture-notes mode. Preserve
   // the user's ordinary settings for when they switch back to regular cards.
