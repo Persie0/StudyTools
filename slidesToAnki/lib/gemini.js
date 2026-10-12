@@ -342,7 +342,7 @@ export class GeminiClient {
       if (classification.kind === 'auth') {
         keyEntry.disabled = true;
         lastError = new Error(
-          `Gemini rejected API key #${keyEntry.index} (HTTP ${response.status}${reason ? ` ${reason}` : ''}): ${message}. ` +
+          `Gemini rejected API key #${keyEntry.index} (HTTP ${response.status}${reason ? ` ${reason}` : ''}): ${message.replace(/[.!?\s]+$/, '')}. ` +
           'Check the key in Google AI Studio. Old unrestricted Standard keys may need replacement or Gemini API restrictions.'
         );
         // Unlike a malformed request, an invalid key is not a reason to retry
