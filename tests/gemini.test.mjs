@@ -9,7 +9,8 @@ import {
   extractJsonValue,
   mergeModelLists,
   modelMetadata,
-  parseModelList
+  parseModelList,
+  parseApiKeys
 } from '../slidesToAnki/lib/gemini.js';
 
 function jsonResponse(body, status = 200, headers = {}) {
@@ -124,4 +125,88 @@ test('PDF-to-Anki defaults match the controls from before the UI redesign', asyn
     /id="include-images"[^>]*type="checkbox" checked/,
     /id="max-source-images"[^>]*>.*?<option value="all" selected>/
   ]) assert.match(html, pattern);
+});
+
+test('API key parsing handles quoted environment variables and duplicate multiline keys', () => {
+  assert.deepEqual(parseApiKeys('\uFEFFGEMINI_API_KEY="AIza-test-1"\n# ignored\nAIza-test-1,AIza-test-2\nexport GOOGLE_API_KEY=\'AIza-test-3\''), [
+    'AIza-test-1', 'AIza-test-2', 'AIza-test-3'
+  ]);
+});
+
+test('Google HTTP 400 API_KEY_INVALID is an authentication error, not a payload error', () => {
+  assert.equal(classifyApiError(400, 'API_KEY_INVALID API key not valid. Please pass a valid API key.').kind, 'auth');
+  assert.equal(classifyApiError(400, 'unknown field generationConfig').kind, 'bad-request');
+});
+
+test('a rejected first key falls through to the next valid key without repeating the request', async () => {
+  const used = [];
+  const fetchImpl = async (_url, init) => {
+    used.push(init.headers['x-goog-api-key']);
+    if (used.length === 1) return jsonResponse({
+      error: {
+        message: 'API key not valid. Please pass a valid API key.',
+        status: 'INVALID_ARGUMENT',
+        details: [{ reason: 'API_KEY_INVALID' }]
+      }
+    }, 400);
+    return jsonResponse({ candidates: [{ content: { parts: [{ text: '{"cards":[]}' }] } }] });
+  };
+  const client = new GeminiClient('bad-key\ngood-key', { fetchImpl });
+  assert.deepEqual(await client.generateJson({ model: DEFAULT_MODEL, prompt: 'test' }), { cards: [] });
+  assert.deepEqual(used, ['bad-key', 'good-key']);
+});
+
+test('all invalid keys fail with a helpful error without exposing key strings', async () => {
+  const calls = [];
+  const client = new GeminiClient('private-key-1\nprivate-key-2', {
+    fetchImpl: async (_url, init) => {
+      calls.push(init.headers['x-goog-api-key']);
+      return jsonResponse({ error: { message: 'API key not valid.', details: [{ reason: 'API_KEY_INVALID' }] } }, 400);
+    }
+  });
+  await assert.rejects(client.listModels(), error => {
+    assert.match(error.message, /API key #2/);
+    assert.match(error.message, /Google AI Studio/);
+    assert.doesNotMatch(error.message, /private-key/);
+    return true;
+  });
+  assert.deepEqual(calls, ['private-key-1', 'private-key-2']);
+});
+
+test('checkKeys probes every key without file upload and reports independent results', async () => {
+  const calls = [];
+  const client = new GeminiClient('invalid-key\ngood-key', {
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      if (init.headers['x-goog-api-key'] === 'invalid-key') {
+        return jsonResponse({ error: { message: 'API key not valid.', details: [{ reason: 'API_KEY_INVALID' }] } }, 400);
+      }
+      return jsonResponse({ models: [] });
+    }
+  });
+  const results = await client.checkKeys();
+  assert.deepEqual(results.map(result => [result.index, result.ok, result.kind]), [
+    [1, false, 'auth'], [2, true, 'valid']
+  ]);
+  for (const { url, init } of calls) {
+    assert.match(url, /\/v1beta\/models\?pageSize=1$/);
+    assert.equal(init.method, 'GET');
+    assert.equal(init.body, undefined);
+    assert.doesNotMatch(url, /invalid-key|good-key/);
+  }
+});
+
+test('bad payload falls back without responseMimeType but does not rotate API keys', async () => {
+  const calls = [];
+  const client = new GeminiClient('valid-key', {
+    fetchImpl: async (_url, init) => {
+      calls.push(JSON.parse(init.body));
+      if (calls.length === 1) return jsonResponse({ error: { message: 'Unknown name responseMimeType' } }, 400);
+      return jsonResponse({ candidates: [{ content: { parts: [{ text: '{"cards":[]}' }] } }] });
+    }
+  });
+  assert.deepEqual(await client.generateJson({ prompt: 'test' }), { cards: [] });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].generationConfig.responseMimeType, 'application/json');
+  assert.equal(calls[1].generationConfig, undefined);
 });
