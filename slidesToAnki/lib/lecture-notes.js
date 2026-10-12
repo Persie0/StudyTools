@@ -250,3 +250,61 @@ export function lectureBackHtml(card, media) {
     section('Common mistakes', explanation.pitfalls)
   ].join('');
 }
+
+
+// Original (pre-redesign) note layout. The "Text" field is intentionally NOT
+// referenced in qfmt or afmt: Anki can search it in the collection browser,
+// but studying the card shows just the topic, slides and explanation.
+export function legacyLectureSearchText(card) {
+  return card.pages.map(page =>
+    '\n--- Slide (Page ' + page + ') ---\n' + String(card.textByPage?.[page] || '')
+  ).join('').trim();
+}
+
+export function legacyLectureImageHtml(card, media, { slideBySlide = false } = {}) {
+  return card.pages.map(page => {
+    const name = media.get(page);
+    if (!name) throw new Error('Source image for PDF page ' + page + ' is missing from the Anki package.');
+    const image = '<img src="' + escapeHtml(name) + '" alt="Slide ' + page + '">';
+    const annotation = slideBySlide ? String(card.annotationsByPage?.[page] || '').trim() : '';
+    return image + (annotation
+      ? '<div class="slide-annotation">' + paragraphs(annotation) + '</div>'
+      : '');
+  }).join('<br>');
+}
+
+export function legacyLectureExplanationHtml(explanation) {
+  const normalized = normalizeLectureExplanation(explanation);
+  // Keep the original teaching-style explanation box. No visible "source text",
+  // "page N", key-points heading, or other redesign-only sub-sections.
+  const intro = normalized.overview ? paragraphs(normalized.overview) : '';
+  return intro + paragraphs(normalized.explanation);
+}
+
+export function legacyLectureNoteFields(card, media, {
+  order = '',
+  includeText = true,
+  slideBySlide = false
+} = {}) {
+  return [
+    String(order),
+    escapeHtml(card.title),
+    legacyLectureImageHtml(card, media, { slideBySlide }),
+    slideBySlide ? '' : legacyLectureExplanationHtml(card.explanation),
+    includeText ? escapeHtml(legacyLectureSearchText(card)) : ''
+  ];
+}
+
+export function buildLegacyLectureAnnotationPrompt({ page, language = 'auto' } = {}) {
+  const languageRule = language === 'auto'
+    ? 'Respond in the language of this slide.' : 'Respond in ' + language + '.';
+  return [
+    'You are annotating a single slide for an Anki flashcard, matching the original slide-by-slide feature.',
+    'Original PDF page ' + page + ' is attached as an image, together with its extracted text.',
+    'If the slide is self-explanatory, return an empty annotation.',
+    'If it has only keywords, formulas, an unexplained diagram or incomplete context, briefly clarify the essential ideas.',
+    'Explain the math with Anki-compatible MathJax when applicable.',
+    languageRule,
+    'Return JSON only: {"annotation":"brief optional clarification"}'
+  ].join('\n');
+}
