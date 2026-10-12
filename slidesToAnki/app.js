@@ -628,32 +628,36 @@ function ankiModel() {
 }
 
 function lectureAnkiModel() {
+  // Same five fields and card template as the pre-redesign "AI Slides" notes.
+  // Keep a unique note type ID to prevent clashes with other Anki note types.
   return new Model({
-    name: 'StudyTools Lecture Slides v1',
-    id: String(stableNumericId('studytools-lecture-slides-v1') + 1_000_000_000_000),
-    flds: [{ name: 'Front' }, { name: 'Back' }, { name: 'SourcePages' }],
+    name: 'StudyTools AI Slides · Original',
+    id: String(stableNumericId('studytools-ai-slides-original-v1') + 1_000_000_000_000),
+    flds: [
+      { name: 'Order' },
+      { name: 'Front' },
+      { name: 'Back' },
+      { name: 'BackContent' },
+      { name: 'Text' }
+    ],
     req: [[0, 'all', [0]]],
-    tmpls: [{ name: 'Lecture card',
-      qfmt: '<div class="lecture-front">{{Front}}</div>',
-      afmt: '{{FrontSide}}<hr id="answer">{{Back}}' }],
+    tmpls: [{
+      name: 'Card 1',
+      qfmt: '{{Front}}',
+      afmt: '{{FrontSide}}<hr id=answer>{{Back}}<br><div class="back-content">{{BackContent}}</div>'
+      // The Text field must NEVER be referenced: it is only for searching.
+    }],
     css: [
-      '.card { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:17px; text-align:left; color:#172033; background:#fff; max-width:940px; margin:0 auto; line-height:1.6; }',
-      '.lecture-front { font-size:1.25em; font-weight:750; line-height:1.4; }',
-      '.lecture-source-images,.lecture-source-text,.lecture-explanation,.lecture-notes-section { margin:24px 0; }',
-      '.lecture-page { margin:16px 0 24px; }',
-      '.lecture-page img { display:block; width:100%; max-width:100%; height:auto; border-radius:8px; }',
-      '.lecture-page figcaption,.lecture-page-text h4 { font-size:.8em; color:#64748b; font-weight:650; margin:8px 0; }',
-      '.lecture-source-text { padding:14px 18px; border:1px solid #ced6e0; border-radius:8px; background:#f8fafc; }',
-      '.lecture-verbatim { white-space:pre-wrap; overflow-wrap:anywhere; font-size:.87em; line-height:1.55; }',
-      '.lecture-page-text + .lecture-page-text { margin-top:20px; border-top:1px solid #ced6e0; padding-top:12px; }',
-      '.lecture-explanation p { margin:12px 0; }',
-      '.lecture-overview { border-left:3px solid #2563eb; padding-left:14px; font-weight:600; }',
-      '.lecture-notes-section li { margin-bottom:8px; }',
-      '.card h3 { margin:16px 0 10px; font-size:1.1em; }',
-      'hr#answer { border:0; border-top:1px solid #cbd5e1; margin:20px 0; }',
-      '.nightMode .card { color:#eef2f6; background:#15171a; }',
-      '.nightMode .lecture-source-text { background:#25282c; border-color:#505764; }',
-      '.nightMode .lecture-page figcaption,.nightMode .lecture-page-text h4 { color:#b6c0ce; }'
+      '.card { font-family: Arial, sans-serif; font-size:20px; text-align:center; color:#111; background:#fff; }',
+      '.back-content { font-size:16px; display:inline-block; text-align:left; width:100%; max-width:700px; line-height:1.6; margin:10px auto; padding:10px; border-radius:5px; border:1px solid #eee; box-sizing:border-box; }',
+      '.back-content:empty { display:none; }',
+      '.slide-annotation { font-size:14px; display:inline-block; text-align:left; width:100%; max-width:700px; line-height:1.5; margin:5px auto 15px; padding:10px; background:#f0f0f0; border:1px solid #ddd; border-radius:5px; box-sizing:border-box; }',
+      'h2 { display:inline; }',
+      'img { max-width:95%; height:auto; }',
+      'hr#answer { border:0; border-top:1px solid #d0d5dd; margin:18px 0; }',
+      '.nightMode .card { color:#eee; background:#15171a; }',
+      '.nightMode .back-content { border-color:#444; }',
+      '.nightMode .slide-annotation { color:#eee; background:#25282c; border-color:#444; }'
     ].join('\n')
   });
 }
@@ -673,10 +677,16 @@ async function createDeck(cards, deckName, { pdf = null, fileIndex = 0, lecture 
   const media = pdf ? await mediaForCards(pkg, pdf, cards, fileIndex, { forceAll: lecture, imageCache }) : new Map();
   const maxImages = ui.maxSourceImages.value === 'all' ? Infinity : Math.max(0, Number(ui.maxSourceImages.value) || 0);
 
-  for (const card of cards) {
+  const baseTimestamp = Date.now();
+  for (const [index, card] of cards.entries()) {
     const mediaNames = card.pages.slice(0, maxImages).map(page => media.get(page)).filter(Boolean);
+    const order = String(baseTimestamp) + String(index).padStart(4, '0');
     const note = lecture
-      ? model.note([escapeHtml(card.title), lectureBackHtml(card, media), card.pages.join(', ')], card.tags)
+      ? model.note(legacyLectureNoteFields(card, media, {
+          order,
+          includeText: ui.legacyIncludeText.checked,
+          slideBySlide: ui.legacySlideBySlide.checked
+        }), card.tags)
       : model.note([escapeHtml(card.front), cardBackHtml(card, mediaNames), card.pages.join(', ')], card.tags);
     deck.addNote(note);
   }
