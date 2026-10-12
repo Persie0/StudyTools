@@ -49,7 +49,7 @@ test('lecture prompts require full coverage, multimodal reasoning and thorough e
   assert.match(grouping, /24 through 29/);
   assert.match(grouping, /contiguous/i);
   const explaining = buildLectureExplanationPrompt({ pages: [24, 25], language: 'German' });
-  for (const phrase of ['EVERY supplied original PDF page', 'equations', 'diagrams', 'misconceptions', 'Page N', 'substantial']) {
+  for (const phrase of ['EVERY supplied original PDF page', 'equations', 'diagrams', 'misconceptions', 'ORIGINAL page number', 'substantial']) {
     assert.ok(explaining.includes(phrase), 'Missing deep explanation prompt guidance: ' + phrase);
   }
 });
