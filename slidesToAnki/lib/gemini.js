@@ -205,6 +205,18 @@ async function responseError(response) {
   return { message, reason };
 }
 
+// Short one-way fingerprint to compare the actual browser key bytes with a
+// local Python key without ever printing or transmitting the credential.
+async function fingerprintKey(key) {
+  try {
+    const bytes = new TextEncoder().encode(key);
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest).slice(0, 8), x => x.toString(16).padStart(2, '0')).join('');
+  } catch (_) {
+    return null;
+  }
+}
+
 export class GeminiClient {
   constructor(apiKeys, { fetchImpl = globalThis.fetch, sleepImpl = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
     // Native Window.fetch requires a Window receiver. Calling a stored unbound
@@ -258,6 +270,7 @@ export class GeminiClient {
       // Never include the key in the diagnostic output.
       results.push({
         index: entry.index,
+        fingerprint: await fingerprintKey(entry.key),
         model: modelId,
         list,
         generation,
