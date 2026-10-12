@@ -155,6 +155,11 @@ function retrySeconds(response, message) {
 
 export function classifyApiError(status, message = '', response = null) {
   const text = String(message || '');
+  // Google reports API_KEY_INVALID as HTTP 400, not HTTP 401. It must
+  // disable the rejected key and allow the next key to be tried.
+  if (/API_KEY_INVALID|API key not valid|invalid API key|API key was reported as leaked/i.test(text)) {
+    return { kind: 'auth', retry: false, cooldownMs: 24 * 60 * 60 * 1000 };
+  }
   if (status === 401 || status === 403) return { kind: 'auth', retry: false, cooldownMs: 24 * 60 * 60 * 1000 };
   if (status === 429 || /quota|rate limit|too many requests/i.test(text)) {
     return { kind: 'rate-limit', retry: true, cooldownMs: (retrySeconds(response, text) || 30) * 1000 };
@@ -166,19 +171,74 @@ export function classifyApiError(status, message = '', response = null) {
   return { kind: 'api', retry: status >= 500, cooldownMs: status >= 500 ? 5000 : 0 };
 }
 
+// Accept plain keys, newline/CSV lists, and copies from .env files; never
+// keep accidental quotes, BOM, duplicate keys, or comment lines.
+export function parseApiKeys(input) {
+  const unique = new Set();
+  for (const raw of String(input || '').replace(/^\uFEFF/, '').split(/[\r\n,;]+/)) {
+    let key = raw.trim();
+    if (!key || key.startsWith('#')) continue;
+    key = key.replace(/^(?:export\s+)?(?:GEMINI_API_KEY|GOOGLE_API_KEY)\s*=\s*/i, '').trim();
+    if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+      key = key.slice(1, -1).trim();
+    }
+    if (key) unique.add(key);
+  }
+  return [...unique];
+}
+
+async function responseError(response) {
+  let message = `HTTP ${response.status}`;
+  let reason = '';
+  try {
+    const raw = await (response.clone ? response.clone() : response).text();
+    try {
+      const data = JSON.parse(raw);
+      message = String(data?.error?.message || data?.message || message);
+      const details = data?.error?.details;
+      reason = Array.isArray(details) ?
+        String(details.find(item => item?.reason)?.reason || '') : '';
+    } catch (_) {
+      message = raw || message;
+    }
+  } catch (_) {}
+  return { message, reason };
+}
+
 export class GeminiClient {
   constructor(apiKeys, { fetchImpl = globalThis.fetch, sleepImpl = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
     // Native Window.fetch requires a Window receiver. Calling a stored unbound
     // reference as this.fetch(...) otherwise throws TypeError: Illegal invocation.
     this.fetch = fetchImpl.bind(globalThis);
     this.sleep = sleepImpl;
-    this.keys = String(apiKeys || '')
-      .split(/\r?\n/)
-      .map(key => key.trim())
-      .filter(Boolean)
-      .map(key => ({ key, availableAt: 0, disabled: false }));
+    this.keys = parseApiKeys(apiKeys)
+      .map((key, index) => ({ key, index: index + 1, availableAt: 0, disabled: false }));
     if (!this.keys.length) throw new Error('Add at least one Gemini API key.');
     this.cursor = 0;
+  }
+
+  // Lightweight authentication probe, with a separate verdict for each key.
+  // It sends no PDFs, prompts, or user content and never returns key values.
+  async checkKeys() {
+    const results = [];
+    for (const entry of this.keys) {
+      try {
+        const response = await this.fetch(
+          'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1',
+          { method: 'GET', headers: { 'x-goog-api-key': entry.key } }
+        );
+        if (response.ok) {
+          results.push({ index: entry.index, ok: true, status: response.status, kind: 'valid', message: 'Accepted by Gemini API' });
+        } else {
+          const error = await responseError(response);
+          const classification = classifyApiError(response.status, `${error.reason} ${error.message}`, response);
+          results.push({ index: entry.index, ok: false, status: response.status, kind: classification.kind, reason: error.reason, message: error.message });
+        }
+      } catch (error) {
+        results.push({ index: entry.index, ok: false, status: 0, kind: 'network', message: String(error?.message || error) });
+      }
+    }
+    return results;
   }
 
   async listModels() {
@@ -243,16 +303,7 @@ export class GeminiClient {
   }
 
   async #throwResponseError(response) {
-    let message = `HTTP ${response.status}`;
-    try {
-      const raw = await response.text();
-      try {
-        const parsed = JSON.parse(raw);
-        message = parsed?.error?.message || parsed?.message || raw || message;
-      } catch (_) {
-        message = raw || message;
-      }
-    } catch (_) {}
+    const { message } = await responseError(response);
     throw new Error(`Gemini API error: ${message}`);
   }
 
@@ -264,7 +315,9 @@ export class GeminiClient {
       let keyEntry = this.#nextAvailableKey();
       if (!keyEntry) {
         const active = this.keys.filter(entry => !entry.disabled);
-        if (!active.length) throw new Error('All Gemini API keys were rejected.');
+        if (!active.length) {
+          throw new Error(lastError?.message || 'All Gemini API keys were rejected. Check the keys in Google AI Studio.');
+        }
         const waitMs = Math.max(250, Math.min(...active.map(entry => entry.availableAt)) - Date.now());
         await this.sleep(waitMs);
         keyEntry = this.#nextAvailableKey();
@@ -283,23 +336,22 @@ export class GeminiClient {
         continue;
       }
 
-      if (response.ok || (allowBadRequestReturn && response.status === 400)) return response;
-
-      let message = '';
-      try {
-        const clone = response.clone ? response.clone() : response;
-        const raw = await clone.text();
-        try { message = JSON.parse(raw)?.error?.message || raw; } catch (_) { message = raw; }
-      } catch (_) {}
-
-      const classification = classifyApiError(response.status, message, response);
-      if (classification.kind === 'auth') keyEntry.disabled = true;
-      else if (classification.cooldownMs) keyEntry.availableAt = Date.now() + classification.cooldownMs;
-
-      if (!classification.retry) {
-        if (allowBadRequestReturn && response.status === 400) return response;
-        throw new Error(`Gemini API error: ${message || `HTTP ${response.status}`}`);
+      if (response.ok) return response;
+      const { message, reason } = await responseError(response);
+      const classification = classifyApiError(response.status, `${reason} ${message}`, response);
+      if (classification.kind === 'auth') {
+        keyEntry.disabled = true;
+        lastError = new Error(
+          `Gemini rejected API key #${keyEntry.index} (HTTP ${response.status}${reason ? ` ${reason}` : ''}): ${message}. ` +
+          'Check the key in Google AI Studio. Old unrestricted Standard keys may need replacement or Gemini API restrictions.'
+        );
+        // Unlike a malformed request, an invalid key is not a reason to retry
+        // the same key without responseMimeType; try the next key instead.
+        continue;
       }
+      if (allowBadRequestReturn && response.status === 400) return response;
+      if (classification.cooldownMs) keyEntry.availableAt = Date.now() + classification.cooldownMs;
+      if (!classification.retry) throw new Error(`Gemini API error (HTTP ${response.status}): ${message}`);
       lastError = new Error(message || `HTTP ${response.status}`);
     }
 
