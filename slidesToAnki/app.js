@@ -57,7 +57,7 @@ const ui = {
   density: $('density'), cardMode: $('card-mode'), strategy: $('strategy'), language: $('language'), standardCardDensity: $('standard-card-density'), standardPdfReading: $('standard-pdf-reading'),
   includeImages: $('include-images'), maxSourceImages: $('max-source-images'), standardImageOptions: $('standard-image-options'),
   legacyOptions: $('legacy-lecture-options'), legacyIncludeText: $('legacy-include-text'), legacyDetailedGrouping: $('legacy-detailed-grouping'), legacySlideBySlide: $('legacy-slide-by-slide'),
-  legacyCompressImages: $('legacy-compress-images'), legacyAutoCrop: $('legacy-auto-crop'), legacyMaxResolution: $('legacy-max-resolution'), legacyMaxKB: $('legacy-max-kb'),
+  legacyCompressImages: $('legacy-compress-images'), legacyAutoCrop: $('legacy-auto-crop'), legacyMaxResolution: $('legacy-max-resolution'), legacyMaxKB: $('legacy-max-kb'), legacyParallelism: $('legacy-parallelism'),
   generate: $('generate'), progress: $('progress'), progressFill: $('progress-fill'), status: $('status'), error: $('error'), results: $('results')
 };
 
@@ -123,6 +123,7 @@ function captureSettings() {
     legacyAutoCrop: ui.legacyAutoCrop.checked,
     legacyMaxResolution: Number(ui.legacyMaxResolution.value),
     legacyMaxKB: Number(ui.legacyMaxKB.value),
+    legacyParallelism: Number(ui.legacyParallelism.value),
     activeInput: state.activeInput
   };
 }
@@ -146,6 +147,7 @@ function restoreSettings(saved) {
   ui.legacyAutoCrop.checked = saved.legacyAutoCrop;
   ui.legacyMaxResolution.value = saved.legacyMaxResolution;
   ui.legacyMaxKB.value = saved.legacyMaxKB;
+  ui.legacyParallelism.value = saved.legacyParallelism;
 }
 
 function syncLectureOptions() {
@@ -1066,7 +1068,7 @@ function bindEvents() {
   ui.model.addEventListener('change', () => { updateModelMeta(); persistSettings(); });
   [ui.density, ui.cardMode, ui.strategy, ui.language, ui.includeImages, ui.maxSourceImages,
    ui.legacyIncludeText, ui.legacyDetailedGrouping, ui.legacySlideBySlide,
-   ui.legacyCompressImages, ui.legacyAutoCrop, ui.legacyMaxResolution, ui.legacyMaxKB]
+   ui.legacyCompressImages, ui.legacyAutoCrop, ui.legacyMaxResolution, ui.legacyMaxKB, ui.legacyParallelism]
     .forEach(control => control.addEventListener('change', () => { syncLectureOptions(); persistSettings(); }));
   ui.generate.addEventListener('click', generate);
   ui.explainSlides.addEventListener('click', generate);
