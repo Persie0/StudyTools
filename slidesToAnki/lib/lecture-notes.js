@@ -185,24 +185,19 @@ export function buildLectureGroupingPrompt({ start, end, language = 'auto' }) {
 
 export function buildLectureExplanationPrompt({ pages, language = 'auto' }) {
   const languageRule = language === 'auto'
-    ? 'Write in the primary language of the slides.' : 'Write in ' + language + '.';
+    ? 'Write in the same language as the slides.' : 'Write in ' + language + '.';
   return [
-    'Write comprehensive but understandable lecture study notes from the attached slide images.',
-    'Explain EVERY supplied original PDF page: ' + pages.join(', ') + '. Images appear in ascending page order.',
-    'Go significantly beyond merely copying or describing slide text. Explain what concepts MEAN, WHY they work and HOW ideas connect.',
-    'Cover all substantive bullet points, diagrams, labels, tables, equations and examples rather than a few highlights.',
-    'For graphs and diagrams, interpret axes, units, arrows, components, patterns and relationships.',
-    'For equations, explain every symbol, relevant units, assumptions, intuition, use cases and an illustrative worked example where appropriate.',
-    'Teach the steps and causal reasoning, define new terms, explain connections across pages and add valuable context without inventing facts.',
-    'Identify exam-worthy takeaways, applications and common misconceptions. State uncertainty when information is unreadable.',
-    'Explain every page separately with an explicit heading containing its ORIGINAL page number (e.g. Page 24), then discuss how the pages connect.',
-    'Write detailed connected paragraphs, not only a short bullet list. Keep the explanation substantial and accurate.',
-    'Use JSON-escaped LaTeX/MathJax and escaped newlines for paragraph breaks.',
+    'You are teaching the content of a grouped set of lecture slides to a student, as in the original slides-to-Anki app.',
+    'The attached images belong to original PDF pages ' + pages.join(', ') + '.',
+    'Write one clear, comprehensive, well-structured explanation for the ENTIRE group rather than separate page-by-page notes.',
+    'Do not just repeat the bullet points. Explain the ideas, why they work, context and relationships between the slides.',
+    'Include relevant explanation of formulas, diagrams, key terms, examples and assumptions.',
+    'The original slide text appears below as context; consider slide images when interpreting drawings and charts.',
+    'Use simple HTML tags <p>, <ul>, <li>, <b> and <i> to structure and emphasize your explanation.',
+    'For math use Anki MathJax delimiters \\(...\\) and \\[...\\], not dollar-sign delimiters.',
     languageRule,
-    'Original extracted PDF text follows as a supplement to the images; inspect visuals directly.',
-    'Return strictly valid JSON only:',
-    '{"title":"precise concept title","overview":"short orientation","explanation":"Explain every original page in detailed, separate paragraphs","keyPoints":["important point"],"examples":["short illustrative example"],"pitfalls":["common misconception"]}',
-    'Do not omit any substantive material from the supplied pages.'
+    'Respond with strictly valid JSON. Backslashes inside JSON strings must be escaped.',
+    '{"explanation":"<p>Full group explanation using simple HTML and Anki MathJax</p>"}'
   ].join('\n');
 }
 
@@ -282,10 +277,17 @@ export function legacyLectureImageHtml(card, media, { slideBySlide = false } = {
 
 export function legacyLectureExplanationHtml(explanation) {
   const normalized = normalizeLectureExplanation(explanation);
-  // Keep the original teaching-style explanation box. No visible "source text",
-  // "page N", key-points heading, or other redesign-only sub-sections.
-  const intro = normalized.overview ? paragraphs(normalized.overview) : '';
-  return intro + paragraphs(normalized.explanation);
+  // Gemini can write the original simple HTML explanation, but attributes,
+  // scripts, images, links and arbitrary tags are not trusted.
+  const render = input => {
+    const value = String(input || '');
+    if (!/<\/?(?:p|ul|li|i|b|strong|em|br)\s*\/?>/i.test(value)) return paragraphs(value);
+    return escapeHtml(value)
+      .replace(/&lt;(\/?)(p|ul|li|i|b|strong|em|br)\s*\/?&gt;/gi, (_match, slash, tag) =>
+        '<' + slash + tag.toLowerCase() + '>');
+  };
+  return (normalized.overview ? render(normalized.overview) : '') +
+    render(normalized.explanation);
 }
 
 export function legacyLectureNoteFields(card, media, {
