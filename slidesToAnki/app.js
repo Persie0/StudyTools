@@ -322,6 +322,79 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
+// Restore original 2x slide rendering, optional border trim (15px margin),
+// and JPEG compression/resizing without adding the old external dependency.
+async function renderLegacyPdfPage(pdf, pageNumber) {
+  const page = await pdf.getPage(pageNumber);
+  const viewport = page.getViewport({ scale: 2 });
+  let canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.ceil(viewport.width));
+  canvas.height = Math.max(1, Math.ceil(viewport.height));
+  const context = canvas.getContext('2d', { alpha: false, willReadFrequently: ui.legacyAutoCrop.checked });
+  await page.render({ canvasContext: context, viewport }).promise;
+
+  if (ui.legacyAutoCrop.checked) {
+    try {
+      const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+      let left = width, right = 0, top = height, bottom = 0;
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const offset = (y * width + x) * 4;
+          if (data[offset] < 250 || data[offset + 1] < 250 || data[offset + 2] < 250) {
+            if (x < left) left = x;
+            if (x >= right) right = x + 1;
+            if (y < top) top = y;
+            if (y >= bottom) bottom = y + 1;
+          }
+        }
+      }
+      if (right > left && bottom > top) {
+        const padding = 15;
+        left = Math.max(0, left - padding);
+        top = Math.max(0, top - padding);
+        right = Math.min(width, right + padding);
+        bottom = Math.min(height, bottom + padding);
+        if (right - left < width || bottom - top < height) {
+          const cropped = document.createElement('canvas');
+          cropped.width = right - left;
+          cropped.height = bottom - top;
+          cropped.getContext('2d').drawImage(canvas, left, top,
+            cropped.width, cropped.height, 0, 0, cropped.width, cropped.height);
+          canvas = cropped;
+        }
+      }
+    } catch (error) {
+      console.warn('Slide autocrop failed; retaining uncropped original image.', error);
+    }
+  }
+
+  if (!ui.legacyCompressImages.checked) return canvasToJpeg(canvas, 0.9);
+
+  const maxResolution = Math.max(300, Math.min(4000, Number(ui.legacyMaxResolution.value) || 1800));
+  const targetBytes = Math.max(50, Math.min(10000, Number(ui.legacyMaxKB.value) || 500)) * 1024;
+  if (Math.max(canvas.width, canvas.height) > maxResolution) {
+    const scale = maxResolution / Math.max(canvas.width, canvas.height);
+    const resized = document.createElement('canvas');
+    resized.width = Math.max(1, Math.round(canvas.width * scale));
+    resized.height = Math.max(1, Math.round(canvas.height * scale));
+    resized.getContext('2d').drawImage(canvas, 0, 0, resized.width, resized.height);
+    canvas = resized;
+  }
+  // Quality first, then downscale further only if JPEG cannot meet target.
+  for (let resizeRound = 0; resizeRound < 5; resizeRound++) {
+    for (const quality of [0.9, 0.78, 0.64, 0.5, 0.4, 0.3]) {
+      const bytes = await canvasToJpeg(canvas, quality);
+      if (bytes.byteLength <= targetBytes || (resizeRound === 4 && quality === 0.3)) return bytes;
+    }
+    const resized = document.createElement('canvas');
+    resized.width = Math.max(1, Math.round(canvas.width * 0.8));
+    resized.height = Math.max(1, Math.round(canvas.height * 0.8));
+    resized.getContext('2d').drawImage(canvas, 0, 0, resized.width, resized.height);
+    canvas = resized;
+  }
+  throw new Error('Could not encode PDF slide.');
+}
+
 async function generateCardsDirectPdf(client, model, file, pdf, buffer) {
   if (file.size > PDF_INLINE_LIMIT) throw new Error('This PDF is over Gemini’s 50 MB inline PDF limit.');
   const prompt = buildPdfCardPrompt({ pageCount: pdf.numPages, density: ui.density.value, language: ui.language.value, mode: ui.cardMode.value });
@@ -526,7 +599,7 @@ async function generateLectureCards(client, model, pdf, buffer) {
   async function getPageJpeg(page) {
     if (imageBytes.has(page)) return imageBytes.get(page);
     if (recentImages.has(page)) return recentImages.get(page);
-    const bytes = await renderPdfPage(pdf, page, 1500);
+    const bytes = await renderLegacyPdfPage(pdf, page);
     if (cacheForExport) {
       imageBytes.set(page, bytes);
     } else {
@@ -634,7 +707,7 @@ async function mediaForCards(packageObject, pdf, cards, fileIndex, { forceAll = 
   let done = 0;
   for (const page of [...needed].sort((a, b) => a - b)) {
     setStatus(`Embedding source page ${page} into the Anki deck…`, 68 + (done / Math.max(1, needed.size)) * 18);
-    const bytes = imageCache?.get(page) || await renderPdfPage(pdf, page, 1500);
+    const bytes = imageCache?.get(page) || await (forceAll ? renderLegacyPdfPage(pdf, page) : renderPdfPage(pdf, page, 1500));
     const name = `studytools_${fileIndex}_${String(page).padStart(4, '0')}.jpg`;
     packageObject.addMedia(bytes, name);
     media.set(page, name);
