@@ -29,7 +29,7 @@ textarea,input,select { width:100%; border:1px solid #d0d5dd; border-radius:10px
 textarea:focus,input:focus,select:focus,button:focus-visible,a:focus-visible { border-color:var(--accent); box-shadow:0 0 0 3px rgba(37,99,235,.12); outline:none; }
 textarea { resize:vertical; }
 .inline-actions,.label-row { display:flex; align-items:center; gap:10px; }
-.inline-actions { margin-top:8px; }
+.inline-actions { margin-top:8px; flex-wrap:wrap; row-gap:8px; }
 .label-row { justify-content:space-between; }
 .check { display:flex; align-items:center; gap:7px; margin:0; color:var(--muted); font-size:12px; font-weight:600; cursor:pointer; }
 .check input { width:auto; margin:0; }
