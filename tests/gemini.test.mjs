@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import {
   DEFAULT_MODEL,
   GeminiClient,
@@ -15,8 +16,8 @@ function jsonResponse(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 }
 
-test('Gemini 3.7 Flash is the preferred free multimodal default', () => {
-  assert.equal(DEFAULT_MODEL, 'gemini-3.7-flash');
+test('legacy Gemini 2.5 Flash remains the default PDF model', () => {
+  assert.equal(DEFAULT_MODEL, 'gemini-2.5-flash');
   const meta = modelMetadata(DEFAULT_MODEL);
   assert.equal(meta.freeTier, true);
   assert.equal(meta.pdf, true);
@@ -30,7 +31,7 @@ test('model discovery keeps all generateContent models but sorts useful free PDF
     { name: 'models/text-embedding-004', supportedGenerationMethods: ['embedContent'] },
     { name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent'] }
   ] });
-  assert.deepEqual(models.map(model => model.id), ['gemini-3.7-flash', 'gemini-2.5-flash', 'gemini-3.1-flash-image']);
+  assert.deepEqual(models.map(model => model.id), ['gemini-2.5-flash', 'gemini-3.7-flash', 'gemini-3.1-flash-image']);
 });
 
 test('fallback merge is deduplicated and default selection is stable', () => {
@@ -83,4 +84,44 @@ test('generate sends PDFs as application/pdf inlineData and parses JSON response
   assert.equal(body.contents[0].parts[1].inlineData.mimeType, 'application/pdf');
   assert.equal(body.generationConfig.responseMimeType, 'application/json');
   assert.equal(result.cards[0].front, 'Q');
+});
+
+
+test('native browser fetch keeps the global Window receiver', async () => {
+  let called = 0;
+  function browserFetch(url, init) {
+    assert.equal(this, globalThis, 'native fetch must be called with the global receiver');
+    assert.match(url, /generativelanguage\.googleapis\.com/);
+    assert.equal(init.headers['x-goog-api-key'], 'test-key');
+    called++;
+    return Promise.resolve(jsonResponse({ models: [] }));
+  }
+  const client = new GeminiClient('test-key', { fetchImpl: browserFetch });
+  assert.deepEqual(await client.listModels(), []);
+  assert.equal(called, 1);
+});
+
+test('illegal invocation is not misclassified as a retryable API failure', async () => {
+  let called = 0;
+  const client = new GeminiClient('test-key', {
+    fetchImpl() {
+      called++;
+      throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");
+    },
+    sleepImpl: async () => {}
+  });
+  await assert.rejects(client.listModels(), /Illegal invocation/);
+  assert.equal(called, 1);
+});
+
+test('PDF-to-Anki defaults match the controls from before the UI redesign', async () => {
+  const html = await readFile(new URL('../slidesToAnki/gemini-anki.html', import.meta.url), 'utf8');
+  for (const pattern of [
+    /id="density"[^>]*><option value="compact" selected>/,
+    /id="card-mode"[^>]*><option value="questions">Questions<\/option><option value="topics" selected>/,
+    /id="strategy"[^>]*><option value="auto">[^<]*<\/option><option value="direct" selected>/,
+    /id="language"[^>]*><option value="auto" selected>/,
+    /id="include-images"[^>]*type="checkbox" checked/,
+    /id="max-source-images"[^>]*>.*?<option value="all" selected>/
+  ]) assert.match(html, pattern);
 });
