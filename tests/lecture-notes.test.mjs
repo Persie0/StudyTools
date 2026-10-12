@@ -17,8 +17,7 @@ import {
   legacyLectureSearchText,
   legacyLectureImageHtml,
   legacyLectureExplanationHtml,
-  buildLegacyLectureAnnotationPrompt,
-  lectureBackHtml
+  buildLegacyLectureAnnotationPrompt
 } from '../slidesToAnki/lib/lecture-notes.js';
 import { normalizeSettings } from '../slidesToAnki/lib/settings.js';
 
