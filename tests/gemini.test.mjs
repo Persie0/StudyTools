@@ -173,7 +173,7 @@ test('all invalid keys fail with a helpful error without exposing key strings', 
   assert.deepEqual(calls, ['private-key-1', 'private-key-2']);
 });
 
-test('checkKeys probes every key without file upload and reports independent results', async () => {
+test('checkKeys compares models.list and generateContent for each key, without uploading a file', async () => {
   const calls = [];
   const client = new GeminiClient('invalid-key\ngood-key', {
     fetchImpl: async (url, init) => {
@@ -184,16 +184,45 @@ test('checkKeys probes every key without file upload and reports independent res
       return jsonResponse({ models: [] });
     }
   });
-  const results = await client.checkKeys();
-  assert.deepEqual(results.map(result => [result.index, result.ok, result.kind]), [
-    [1, false, 'auth'], [2, true, 'valid']
+  const results = await client.checkKeys({ model: 'gemini-2.5-flash' });
+  assert.deepEqual(results.map(result => [result.index, result.list.kind, result.generation.kind]), [
+    [1, 'auth', 'auth'], [2, 'valid', 'valid']
   ]);
+  assert.equal(calls.length, 4);
+  assert.deepEqual(calls.map(call => call.init.method), ['GET', 'POST', 'GET', 'POST']);
   for (const { url, init } of calls) {
-    assert.match(url, /\/v1beta\/models\?pageSize=1$/);
-    assert.equal(init.method, 'GET');
-    assert.equal(init.body, undefined);
+    assert.equal(init.credentials, 'omit');
+    assert.equal(init.cache, 'no-store');
     assert.doesNotMatch(url, /invalid-key|good-key/);
+    if (init.method === 'POST') {
+      assert.match(url, /gemini-2\.5-flash:generateContent$/);
+      const body = JSON.parse(init.body);
+      assert.equal(body.contents[0].parts[0].text, 'ping');
+      assert.equal(body.generationConfig.maxOutputTokens, 8);
+      assert.doesNotMatch(init.body, /private|PDF|lecture/);
+    } else {
+      assert.match(url, /\/v1beta\/models\?pageSize=1$/);
+      assert.equal(init.body, undefined);
+    }
   }
+  for (const result of results) {
+    assert.equal(result.model, 'gemini-2.5-flash');
+    assert.equal(result.fingerprint === null || /^[0-9a-f]{16}$/.test(result.fingerprint), true);
+    assert.equal(JSON.stringify(result).includes('invalid-key'), false);
+    assert.equal(JSON.stringify(result).includes('good-key'), false);
+  }
+});
+
+test('checkKeys differentiates model-list and generation failures', async () => {
+  const client = new GeminiClient('secret-key', {
+    fetchImpl: async (url) => url.includes('generateContent')
+      ? jsonResponse({ error: { message: 'Model unavailable' } }, 404)
+      : jsonResponse({ models: [] })
+  });
+  const [result] = await client.checkKeys();
+  assert.equal(result.list.ok, true);
+  assert.equal(result.generation.ok, false);
+  assert.equal(result.generation.status, 404);
 });
 
 test('bad payload falls back without responseMimeType but does not rotate API keys', async () => {
