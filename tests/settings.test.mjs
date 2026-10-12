@@ -34,6 +34,7 @@ test('restores the original default selections when no preferences are saved', (
     legacyAutoCrop: false,
     legacyMaxResolution: 1800,
     legacyMaxKB: 500,
+    legacyParallelism: 10,
     activeInput: 'pdf',
     model: 'gemini-2.5-flash'
   });
@@ -55,6 +56,7 @@ test('saves and restores all deck selections across simulated page reloads', () 
     legacyAutoCrop: true,
     legacyMaxResolution: 1400,
     legacyMaxKB: 320,
+    legacyParallelism: 6,
     activeInput: 'slides',
     model: 'gemini-2.5-pro'
   };
