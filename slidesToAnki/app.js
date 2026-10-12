@@ -22,6 +22,8 @@ import {
 import { loadSettings, saveSettings } from './lib/settings.js';
 import {
   lectureGroupingWindows,
+  buildWholeDocumentLectureGroupingPrompt,
+  normalizeLectureGroups,
   reconcileLectureWindowGroups,
   buildLectureGroupingPrompt,
   buildLectureExplanationPrompt,
@@ -436,7 +438,7 @@ function lectureTextContext(textByPage, pages, perPageLimit = 14000) {
 
 // Separate grouping and teaching passes reproduce the old grouped-slide cards,
 // but the explanation pass reads every page visually and writes richer notes.
-async function generateLectureCards(client, model, pdf) {
+async function generateLectureCards(client, model, pdf, buffer) {
   if (!modelMetadata(model).imageInput) {
     throw new Error('Lecture-slide notes need a Gemini model with image input. Select a multimodal Flash or Pro model.');
   }
@@ -447,7 +449,50 @@ async function generateLectureCards(client, model, pdf) {
     textByPage[page] = await extractLecturePageText(pdf, page);
   }
 
-  // Group the WHOLE document first, using overlapping eight-page windows
+  const outlinePrompt = buildWholeDocumentLectureGroupingPrompt({
+    pageCount: pdf.numPages, language: ui.language.value
+  });
+  let groups = null;
+  const canSendWholePdf = modelMetadata(model).pdf &&
+    buffer.byteLength <= PDF_INLINE_SAFETY_LIMIT;
+
+  if (canSendWholePdf) {
+    // Old workflow: understand the entire document in one request first.
+    setStatus('Analyzing the entire PDF to identify natural topic groups…', 19);
+    try {
+      const payload = await client.generateJson({
+        model, prompt: outlinePrompt, pdfBase64: arrayBufferToBase64(buffer)
+      });
+      if (!Array.isArray(payload?.groups) && !Array.isArray(payload)) {
+        throw new Error('Whole-PDF grouping did not return a list of groups.');
+      }
+      groups = normalizeLectureGroups(payload, 1, pdf.numPages);
+    } catch (error) {
+      console.warn('Whole-PDF topic grouping failed; trying a complete document-text outline.', error);
+    }
+  }
+  if (!groups) {
+    const completeText = lectureTextContext(textByPage,
+      Array.from({ length: pdf.numPages }, (_, i) => i + 1), Infinity);
+    // A complete text outline is preferable to splitting the topic structure
+    // into artificial windows, when it fits safely into one request.
+    if (completeText.length <= 160_000 && completeText.replace(/--- ORIGINAL PDF PAGE \d+ ---|\[No selectable text — interpret the attached slide image\]/g, '').trim()) {
+      setStatus('Analyzing the complete PDF text for topic boundaries…', 21);
+      try {
+        const payload = await client.generateJson({
+          model, prompt: outlinePrompt + '\n\n' + completeText
+        });
+        if (!Array.isArray(payload?.groups) && !Array.isArray(payload)) {
+          throw new Error('Whole-document text grouping did not return a list of groups.');
+        }
+        groups = normalizeLectureGroups(payload, 1, pdf.numPages);
+      } catch (error) {
+        console.warn('Whole-document text outline failed; recovering with overlapping visual page windows.', error);
+      }
+    }
+  }
+
+  // Fallback only: overlapping visual windows when no whole-document outline is available.
   // with four pages of context shared between consecutive calls. Source pages
   // 8 and 9 are seen together, so the old hard eight-page boundary disappears.
   const imageBytes = new Map();
@@ -468,7 +513,8 @@ async function generateLectureCards(client, model, pdf) {
     return bytes;
   }
 
-  const windows = lectureGroupingWindows(pdf.numPages);
+  if (!groups) {
+    const windows = lectureGroupingWindows(pdf.numPages);
   const windowResults = [];
   for (let index = 0; index < windows.length; index++) {
     const { start, end } = windows[index];
@@ -500,7 +546,8 @@ async function generateLectureCards(client, model, pdf) {
 
   // Reconcile all overlapping suggestions before explaining a single topic.
   // This allows e.g. a card spanning original pages 7–10.
-  const groups = reconcileLectureWindowGroups(windowResults, pdf.numPages);
+  groups = reconcileLectureWindowGroups(windowResults, pdf.numPages);
+  }
   const cards = [];
   for (let index = 0; index < groups.length; index++) {
     const group = groups[index];
@@ -634,7 +681,7 @@ async function processPdf(file, fileIndex, totalFiles, client, model) {
   setStatus(`Loading ${file.name}…`, 6 + (fileIndex / totalFiles) * 5);
   const { pdf, buffer } = await loadPdf(file);
   const lecture = ui.cardMode.value === 'lecture';
-  const generated = lecture ? await generateLectureCards(client, model, pdf) : null;
+  const generated = lecture ? await generateLectureCards(client, model, pdf, buffer) : null;
   const cards = lecture ? generated.cards : await generatePdfCards(client, model, file, pdf, buffer);
   setStatus(`Validated ${cards.length} cards for ${file.name}.`, 66);
   const count = await createDeck(cards, safeDeckName(file.name), {
