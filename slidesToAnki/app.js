@@ -55,8 +55,7 @@ const ui = {
   slideFiles: $('slide-pdf-input'), chooseSlidePdf: $('choose-slide-pdf'), slideDropzone: $('slide-dropzone'), slideFileList: $('slide-file-list'), explainSlides: $('explain-slides'),
   density: $('density'), cardMode: $('card-mode'), strategy: $('strategy'), language: $('language'), lectureHint: $('lecture-mode-hint'), standardCardDensity: $('standard-card-density'), standardPdfReading: $('standard-pdf-reading'),
   includeImages: $('include-images'), maxSourceImages: $('max-source-images'), standardImageOptions: $('standard-image-options'),
-  generate: $('generate'), progress: $('progress'), progressFill: $('progress-fill'), status: $('status'), error: $('error'), results: $('results'),
-  keyHelp: $('key-help')
+  generate: $('generate'), progress: $('progress'), progressFill: $('progress-fill'), status: $('status'), error: $('error'), results: $('results')
 };
 
 const state = {
