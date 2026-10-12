@@ -7,6 +7,7 @@ import {
   chooseModel,
   classifyApiError,
   extractJsonValue,
+  repairModelJson,
   mergeModelLists,
   modelMetadata,
   parseModelList,
@@ -238,4 +239,69 @@ test('bad payload falls back without responseMimeType but does not rotate API ke
   assert.equal(calls.length, 2);
   assert.equal(calls[0].generationConfig.responseMimeType, 'application/json');
   assert.equal(calls[1].generationConfig, undefined);
+});
+
+test('Gemini JSON repair preserves single-backslash LaTeX commands and MathJax', () => {
+  const slash = String.fromCharCode(92);
+  const math = slash + '(F=' + slash + 'frac{1}{2} + ' + slash + 'alpha + ' +
+    slash + 'theta + ' + slash + 'sqrt{x} + ' + slash + 'beta + ' + slash + 'nabla f' + slash + ')';
+  const malformed = JSON.stringify({ cards: [{ front: 'Formula', back: math, pages: [3] }] })
+    .replaceAll(slash + slash, slash);
+  const result = extractJsonValue(malformed);
+  assert.equal(result.cards[0].back, math);
+  assert.equal(result.cards[0].back.includes(String.fromCharCode(12)), false);
+  assert.equal(result.cards[0].back.includes(String.fromCharCode(9)), false);
+});
+
+test('Gemini JSON repair leaves properly escaped LaTeX, newlines and quotations intact', () => {
+  const slash = String.fromCharCode(92);
+  const value = { cards: [{ front: 'Line one' + String.fromCharCode(10) + 'Line two',
+    back: slash + '(a ' + slash + 'frac{b}{c}' + slash + ') and "quoted" text', pages: [1] }] };
+  const correct = JSON.stringify(value);
+  assert.equal(repairModelJson(correct), correct);
+  assert.deepEqual(extractJsonValue(correct), value);
+});
+
+test('Gemini JSON repair ignores commas inside quoted fields and removes structural trailing commas', () => {
+  const slash = String.fromCharCode(92);
+  const malformed = JSON.stringify({
+    cards: [{ front: 'a,]}', back: slash + 'sum_{i=0}^{n} x_i', pages: [2] }]
+  }).replaceAll(slash + slash, slash)
+    .replace('"pages":[2]', '"pages":[2,]')
+    .replace(',"pages":[2,]}', ',"pages":[2,],}')
+    .replace('}]}', '},],}');
+  assert.deepEqual(extractJsonValue(' ```json' + String.fromCharCode(10) + malformed + '```'), {
+    cards: [{ front: 'a,]}', back: slash + 'sum_{i=0}^{n} x_i', pages: [2] }]
+  });
+});
+
+test('Gemini JSON repair handles unescaped newlines and preserves unicode escapes', () => {
+  const slash = String.fromCharCode(92);
+  const original = JSON.stringify({ cards: [{ front: 'first' + String.fromCharCode(10) + 'second',
+    back: 'accent é' }] });
+  const malformed = original.replace(slash + 'n', String.fromCharCode(10));
+  assert.deepEqual(extractJsonValue(malformed).cards[0], {
+    front: 'first' + String.fromCharCode(10) + 'second', back: 'accent é'
+  });
+  assert.equal(extractJsonValue('{"cards":[{"front":"\\u00e9","back":"ok"}]}').cards[0].front, 'é');
+});
+
+test('Gemini JSON repair reports incomplete or irrecoverable output without leaking response content', () => {
+  assert.throws(() => extractJsonValue('{"cards":[{"front":"foo"'), /incomplete JSON|malformed JSON/);
+  assert.throws(() => extractJsonValue('{"cards":[{"front":"secret","back":}]}'), error => {
+    assert.match(error.message, /malformed JSON/);
+    assert.doesNotMatch(error.message, /secret/);
+    return true;
+  });
+});
+
+test('GeminiClient.generateJson recovers malformed escaped LaTeX in the actual response path', async () => {
+  const slash = String.fromCharCode(92);
+  const back = slash + '(x=' + slash + 'frac{1}{2}' + slash + ')';
+  const malformed = JSON.stringify({ cards: [{ front: 'Math', back, pages: [1] }] })
+    .replaceAll(slash + slash, slash);
+  const client = new GeminiClient('test-key', {
+    fetchImpl: async () => jsonResponse({ candidates: [{ content: { parts: [{ text: malformed }] } }] })
+  });
+  assert.equal((await client.generateJson({ prompt: 'Summarize math' })).cards[0].back, back);
 });
