@@ -40,12 +40,16 @@ textarea { resize:vertical; }
 .field-group { margin-top:20px; }
 .model-meta { display:inline-block; margin-top:8px; background:#fff; }
 .divider { height:1px; background:var(--line); margin:26px -28px; }
-.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.form-grid > div { min-width:0; }
+.form-grid select { min-width:0; width:100%; max-width:100%; }
+/* Module state hides irrelevant controls; CSS layout must not override hidden. */
+[hidden] { display:none !important; }
 .option-check { margin-top:18px; font-size:13px; color:var(--text); }
 .source-image-limit { display:flex; align-items:center; gap:10px; margin-top:10px; }
 .source-image-limit label { margin:0; color:var(--muted); white-space:nowrap; }
 .source-image-limit select { width:auto; padding:7px 10px; }
-.tabs { display:flex; gap:4px; padding:4px; background:var(--surface-2); border:1px solid var(--line); border-radius:12px; width:max-content; margin-bottom:24px; }
+.tabs { display:flex; flex-wrap:wrap; gap:4px; padding:4px; background:var(--surface-2); border:1px solid var(--line); border-radius:12px; width:fit-content; max-width:100%; margin-bottom:24px; }
 .tabs button { border:0; background:transparent; color:var(--muted); padding:8px 18px; border-radius:9px; font-size:13px; font-weight:700; cursor:pointer; }
 .tabs button.active { background:#fff; color:var(--text); box-shadow:0 1px 3px rgba(16,24,40,.08); }
 .dropzone { border:1.5px dashed #cbd5e1; background:#fbfcfd; border-radius:16px; min-height:300px; padding:44px 24px; display:flex; align-items:center; justify-content:center; flex-direction:column; text-align:center; cursor:pointer; transition:.15s; }
