@@ -64,12 +64,13 @@ export function buildLectureExplanationPrompt({ pages, language = 'auto' }) {
     'For equations, explain every symbol, relevant units, assumptions, intuition, use cases and an illustrative worked example where appropriate.',
     'Teach the steps and causal reasoning, define new terms, explain connections across pages and add valuable context without inventing facts.',
     'Identify exam-worthy takeaways, applications and common misconceptions. State uncertainty when information is unreadable.',
+    'Explain every page separately with an explicit Page N section in the narrative, then discuss how the pages connect.',
     'Write detailed connected paragraphs, not only a short bullet list. Keep the explanation substantial and accurate.',
     'Use JSON-escaped LaTeX/MathJax and escaped newlines for paragraph breaks.',
     languageRule,
     'Original extracted PDF text follows as a supplement to the images; inspect visuals directly.',
     'Return strictly valid JSON only:',
-    '{"overview":"short orientation","explanation":"detailed multi-paragraph teaching explanation","keyPoints":["important point"],"examples":["short illustrative example"],"pitfalls":["common misconception"]}',
+    '{"title":"precise concept title","overview":"short orientation","explanation":"Page 1: detailed explanation\\n\\nPage 2: detailed explanation","keyPoints":["important point"],"examples":["short illustrative example"],"pitfalls":["common misconception"]}',
     'Do not omit any substantive material from the supplied pages.'
   ].join('\n');
 }
@@ -81,6 +82,7 @@ export function normalizeLectureExplanation(value) {
   const list = input => (Array.isArray(input) ? input : [])
     .filter(x => typeof x === 'string').map(x => x.trim()).filter(Boolean).slice(0, 16);
   return {
+    title: String(record.title || '').trim().slice(0, 180),
     overview: String(record.overview || '').trim(),
     explanation,
     keyPoints: list(record.keyPoints || record.key_points),
