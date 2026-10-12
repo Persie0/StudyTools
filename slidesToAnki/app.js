@@ -410,6 +410,92 @@ async function generatePdfCards(client, model, file, pdf, buffer) {
   return generateCardsFromPdfText(client, model, pdf);
 }
 
+// Unlike an AI summary, this keeps every extractable character from each
+// source page in the exported Anki note. PDF text extraction is not OCR.
+async function extractLecturePageText(pdf, pageNumber) {
+  const page = await pdf.getPage(pageNumber);
+  const content = await page.getTextContent();
+  return content.items.map(item =>
+    String(item?.str || '') + (item?.hasEOL ? '\n' : ' ')
+  ).join('').trim();
+}
+
+function lectureTextContext(textByPage, pages, perPageLimit = 14000) {
+  return pages.map(page => {
+    const text = textByPage[page] || '';
+    const clipped = text.slice(0, perPageLimit);
+    return '--- ORIGINAL PDF PAGE ' + page + ' ---\n' +
+      (clipped || '[No selectable text — interpret the attached slide image]') +
+      (clipped.length < text.length ? '\n[Text excerpt clipped for model input; full original text is preserved in the Anki card]' : '');
+  }).join('\n\n');
+}
+
+// Separate grouping and teaching passes reproduce the old grouped-slide cards,
+// but the explanation pass reads every page visually and writes richer notes.
+async function generateLectureCards(client, model, pdf) {
+  if (!modelMetadata(model).imageInput) {
+    throw new Error('Lecture-slide notes need a Gemini model with image input. Select a multimodal Flash or Pro model.');
+  }
+  const textByPage = {};
+  for (let page = 1; page <= pdf.numPages; page++) {
+    setStatus('Extracting full PDF text from page ' + page + '/' + pdf.numPages + '…',
+      8 + (page / pdf.numPages) * 8);
+    textByPage[page] = await extractLecturePageText(pdf, page);
+  }
+
+  const cards = [];
+  const imageBytes = new Map();
+  for (let start = 1; start <= pdf.numPages; start += LECTURE_GROUP_BATCH_PAGES) {
+    const end = Math.min(pdf.numPages, start + LECTURE_GROUP_BATCH_PAGES - 1);
+    const pages = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+    setStatus('Reading and grouping slide images ' + start + '–' + end + '…',
+      17 + ((start - 1) / pdf.numPages) * 25);
+
+    const images = [];
+    for (const page of pages) {
+      const bytes = await renderPdfPage(pdf, page, 1500);
+      imageBytes.set(page, bytes);
+      images.push({ mimeType: 'image/jpeg', data: bytesToBase64(bytes) });
+    }
+
+    let grouping = null;
+    try {
+      const prompt = [
+        buildLectureGroupingPrompt({ start, end, language: ui.language.value }),
+        lectureTextContext(textByPage, pages, 2400)
+      ].join('\n\n');
+      grouping = await client.generateJson({ model, prompt, images });
+    } catch (error) {
+      // Grouping is optional: never drop a page when this auxiliary call fails.
+      console.warn('Could not group PDF pages ' + start + '–' + end + '; using individual page cards.', error);
+    }
+    const groups = normalizeLectureGroups(grouping, start, end);
+    for (const group of groups) {
+      setStatus('Teaching topic from PDF pages ' + group.pages.join(', ') + '…',
+        42 + (group.pages[0] / pdf.numPages) * 24);
+      const groupImages = group.pages.map(page => ({
+        mimeType: 'image/jpeg', data: bytesToBase64(imageBytes.get(page))
+      }));
+      const prompt = [
+        buildLectureExplanationPrompt({ pages: group.pages, language: ui.language.value }),
+        lectureTextContext(textByPage, group.pages)
+      ].join('\n\n');
+      let explanation;
+      try {
+        explanation = normalizeLectureExplanation(
+          await client.generateJson({ model, prompt, images: groupImages })
+        );
+      } catch (error) {
+        throw new Error('Could not generate a detailed explanation for pages ' +
+          group.pages.join(', ') + ': ' + (error?.message || error));
+      }
+      cards.push({ title: explanation.title || group.title, pages: group.pages,
+        textByPage, explanation, tags: [] });
+    }
+  }
+  return { cards, imageBytes };
+}
+
 async function mediaForCards(packageObject, pdf, cards, fileIndex) {
   if (!ui.includeImages.checked) return new Map();
   const maxImages = ui.maxSourceImages.value === 'all' ? Infinity : Math.max(0, Number(ui.maxSourceImages.value) || 0);
