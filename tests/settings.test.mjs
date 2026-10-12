@@ -27,6 +27,9 @@ test('restores the original default selections when no preferences are saved', (
     language: 'auto',
     includeImages: true,
     maxSourceImages: 'all',
+    legacyIncludeText: true,
+    legacyDetailedGrouping: false,
+    legacySlideBySlide: false,
     activeInput: 'pdf',
     model: 'gemini-2.5-flash'
   });
@@ -41,6 +44,9 @@ test('saves and restores all deck selections across simulated page reloads', () 
     language: 'German',
     includeImages: false,
     maxSourceImages: '3',
+    legacyIncludeText: false,
+    legacyDetailedGrouping: true,
+    legacySlideBySlide: true,
     activeInput: 'slides',
     model: 'gemini-2.5-pro'
   };
