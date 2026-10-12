@@ -639,20 +639,19 @@ async function checkGeminiKeys() {
     return;
   }
   ui.checkKeys.disabled = true;
-  ui.keyCheckStatus.textContent = 'Checking Gemini API keys…';
+  ui.keyCheckStatus.textContent = 'Comparing Gemini model-list and generation requests…';
   try {
-    const results = await new GeminiClient(apiKeys()).checkKeys();
+    const model = currentModel();
+    const results = await new GeminiClient(apiKeys()).checkKeys({ model });
+    const describe = (name, probe) => {
+      if (probe.ok) return `${name}: HTTP ${probe.status} OK`;
+      if (probe.kind === 'network') return `${name}: network error (${probe.message})`;
+      return `${name}: HTTP ${probe.status} ${probe.reason || probe.kind}`;
+    };
     ui.keyCheckStatus.textContent = results.map(result => {
-      const key = `Key #${result.index}`;
-      if (result.ok) return `${key}: valid (Gemini API accepted it)`;
-      if (result.kind === 'auth' && result.status === 400) {
-        return `${key}: invalid/revoked (HTTP 400). Re-copy an active key in Google AI Studio, or replace a blocked legacy Standard key.`;
-      }
-      if (result.kind === 'auth') return `${key}: rejected (HTTP ${result.status}). Check Gemini API and application restrictions.`;
-      if (result.kind === 'rate-limit') return `${key}: quota/rate limit (HTTP ${result.status}); authentication could not be confirmed.`;
-      if (result.kind === 'network') return `${key}: network or browser request failed. Check connectivity, extensions, and CORS.`;
-      return `${key}: Gemini API returned HTTP ${result.status} (${result.kind}).`;
-    }).join(' | ');
+      const fingerprint = result.fingerprint ? ` · SHA-256 ${result.fingerprint}` : '';
+      return `Key #${result.index}${fingerprint} · ${model}\n${describe('models.list', result.list)}\n${describe('generateContent', result.generation)}`;
+    }).join('\n\n');
   } catch (error) {
     ui.keyCheckStatus.textContent = `Could not check keys: ${error?.message || error}`;
   } finally {

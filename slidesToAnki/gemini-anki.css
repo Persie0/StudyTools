@@ -36,6 +36,7 @@ textarea { resize:vertical; }
 .link-button { border:0; padding:2px 0; background:transparent; color:var(--accent); font-size:12px; font-weight:750; cursor:pointer; }
 .link-button.danger { color:var(--danger); }
 .privacy-mini { color:var(--muted); font-size:11px; margin:7px 0 0; }
+#key-check-status { white-space:pre-line; overflow-wrap:anywhere; line-height:1.5; }
 .field-group { margin-top:20px; }
 .model-meta { display:inline-block; margin-top:8px; background:#fff; }
 .divider { height:1px; background:var(--line); margin:26px -28px; }
