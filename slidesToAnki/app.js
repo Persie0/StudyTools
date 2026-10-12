@@ -516,38 +516,38 @@ async function generateLectureCards(client, model, pdf, buffer) {
 
   if (!groups) {
     const windows = lectureGroupingWindows(pdf.numPages);
-  const windowResults = [];
-  for (let index = 0; index < windows.length; index++) {
-    const { start, end } = windows[index];
-    const pages = Array.from({ length: end - start + 1 }, (_, i) => start + i);
-    setStatus('Comparing related slides ' + start + '–' + end +
-      ' (overlapping context, window ' + (index + 1) + '/' + windows.length + ')…',
-      17 + (index / windows.length) * 25);
+    const windowResults = [];
+    for (let index = 0; index < windows.length; index++) {
+      const { start, end } = windows[index];
+      const pages = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+      setStatus('Comparing related slides ' + start + '–' + end +
+        ' (overlapping context, window ' + (index + 1) + '/' + windows.length + ')…',
+        17 + (index / windows.length) * 25);
 
-    const images = [];
-    for (const page of pages) {
-      const bytes = await getPageJpeg(page);
-      images.push({ mimeType: 'image/jpeg', data: bytesToBase64(bytes) });
+      const images = [];
+      for (const page of pages) {
+        const bytes = await getPageJpeg(page);
+        images.push({ mimeType: 'image/jpeg', data: bytesToBase64(bytes) });
+      }
+
+      let payload = null;
+      try {
+        const prompt = [
+          buildLectureGroupingPrompt({ start, end, language: ui.language.value }),
+          lectureTextContext(textByPage, pages, 2400)
+        ].join('\n\n');
+        payload = await client.generateJson({ model, prompt, images });
+      } catch (error) {
+        // Other overlapping windows can still supply the boundary decisions.
+        console.warn('Could not group PDF pages ' + start + '–' + end +
+          '; recovering groups from neighboring windows.', error);
+      }
+      windowResults.push({ start, end, payload });
     }
 
-    let payload = null;
-    try {
-      const prompt = [
-        buildLectureGroupingPrompt({ start, end, language: ui.language.value }),
-        lectureTextContext(textByPage, pages, 2400)
-      ].join('\n\n');
-      payload = await client.generateJson({ model, prompt, images });
-    } catch (error) {
-      // Other overlapping windows can still supply the boundary decisions.
-      console.warn('Could not group PDF pages ' + start + '–' + end +
-        '; recovering groups from neighboring windows.', error);
-    }
-    windowResults.push({ start, end, payload });
-  }
-
-  // Reconcile all overlapping suggestions before explaining a single topic.
-  // This allows e.g. a card spanning original pages 7–10.
-  groups = reconcileLectureWindowGroups(windowResults, pdf.numPages);
+    // Reconcile all overlapping suggestions before explaining a single topic.
+    // This allows e.g. a card spanning original pages 7–10.
+    groups = reconcileLectureWindowGroups(windowResults, pdf.numPages);
   }
   const cards = [];
   for (let index = 0; index < groups.length; index++) {
