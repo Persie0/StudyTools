@@ -1,4 +1,5 @@
-export const DEFAULT_MODEL = 'gemini-3.7-flash';
+// Match the original PDF-to-Anki default, rather than preferring an unverified newer model.
+export const DEFAULT_MODEL = 'gemini-2.5-flash';
 
 export const FALLBACK_MODELS = [
   'gemini-3.7-flash',
@@ -167,7 +168,9 @@ export function classifyApiError(status, message = '', response = null) {
 
 export class GeminiClient {
   constructor(apiKeys, { fetchImpl = globalThis.fetch, sleepImpl = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
-    this.fetch = fetchImpl;
+    // Native Window.fetch requires a Window receiver. Calling a stored unbound
+    // reference as this.fetch(...) otherwise throws TypeError: Illegal invocation.
+    this.fetch = fetchImpl.bind(globalThis);
     this.sleep = sleepImpl;
     this.keys = String(apiKeys || '')
       .split(/\r?\n/)
@@ -273,6 +276,8 @@ export class GeminiClient {
       try {
         response = await this.fetch(url, { ...init, headers });
       } catch (error) {
+        // A JavaScript invocation bug is not a transient Google API failure.
+        if (/illegal invocation/i.test(String(error?.message || ''))) throw error;
         lastError = error;
         keyEntry.availableAt = Date.now() + 1000;
         continue;
