@@ -555,7 +555,7 @@ async function generateLectureCards(client, model, pdf, buffer) {
       const payload = await client.generateJson({
         model, prompt: outlinePrompt, pdfBase64: arrayBufferToBase64(buffer)
       });
-      if (!isUsableLectureOutline(payload, pdf.numPages)) {
+      if (!isUsableLectureOutline(payload, pdf.numPages, 0.3)) {
         throw new Error('Whole-PDF grouping did not cover enough source pages.');
       }
       groups = normalizeLectureGroups(payload, 1, pdf.numPages, {
@@ -577,7 +577,7 @@ async function generateLectureCards(client, model, pdf, buffer) {
         const payload = await client.generateJson({
           model, prompt: outlinePrompt + '\n\n' + completeText
         });
-        if (!isUsableLectureOutline(payload, pdf.numPages)) {
+        if (!isUsableLectureOutline(payload, pdf.numPages, 0.3)) {
           throw new Error('Whole-document text grouping did not cover enough source pages.');
         }
         groups = normalizeLectureGroups(payload, 1, pdf.numPages, {
