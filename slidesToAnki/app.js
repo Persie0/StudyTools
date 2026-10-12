@@ -23,6 +23,7 @@ import { loadSettings, saveSettings } from './lib/settings.js';
 import {
   lectureGroupingWindows,
   buildWholeDocumentLectureGroupingPrompt,
+  isUsableLectureOutline,
   normalizeLectureGroups,
   reconcileLectureWindowGroups,
   buildLectureGroupingPrompt,
@@ -463,8 +464,8 @@ async function generateLectureCards(client, model, pdf, buffer) {
       const payload = await client.generateJson({
         model, prompt: outlinePrompt, pdfBase64: arrayBufferToBase64(buffer)
       });
-      if (!Array.isArray(payload?.groups) && !Array.isArray(payload)) {
-        throw new Error('Whole-PDF grouping did not return a list of groups.');
+      if (!isUsableLectureOutline(payload, pdf.numPages)) {
+        throw new Error('Whole-PDF grouping did not cover enough source pages.');
       }
       groups = normalizeLectureGroups(payload, 1, pdf.numPages);
     } catch (error) {
@@ -482,8 +483,8 @@ async function generateLectureCards(client, model, pdf, buffer) {
         const payload = await client.generateJson({
           model, prompt: outlinePrompt + '\n\n' + completeText
         });
-        if (!Array.isArray(payload?.groups) && !Array.isArray(payload)) {
-          throw new Error('Whole-document text grouping did not return a list of groups.');
+        if (!isUsableLectureOutline(payload, pdf.numPages)) {
+          throw new Error('Whole-document text grouping did not cover enough source pages.');
         }
         groups = normalizeLectureGroups(payload, 1, pdf.numPages);
       } catch (error) {
@@ -492,9 +493,9 @@ async function generateLectureCards(client, model, pdf, buffer) {
     }
   }
 
-  // Fallback only: overlapping visual windows when no whole-document outline is available.
-  // with four pages of context shared between consecutive calls. Source pages
-  // 8 and 9 are seen together, so the old hard eight-page boundary disappears.
+  // Fallback only: overlapping visual windows when no full-document outline
+  // is available. Neighboring calls share four pages, so the old hard 8/9
+  // topic boundary disappears.
   const imageBytes = new Map();
   const cacheForExport = pdf.numPages <= 80;
   const recentImages = new Map();
