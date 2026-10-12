@@ -138,7 +138,7 @@ export function buildWholeDocumentLectureGroupingPrompt({ pageCount, language = 
     'Return strictly valid JSON only:',
     '{"groups":[{"title":"First concept","pages":[1,2]},{"title":"Next concept","pages":[3,4]}]}',
     'The numbers in the example are placeholders. Analyze the PDF and provide real topic boundaries for the entire document.'
-  ].join('\\n');
+  ].join('\n');
 }
 
 export function buildLectureGroupingPrompt({ start, end, language = 'auto' }) {
