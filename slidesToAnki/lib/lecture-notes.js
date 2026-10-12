@@ -234,38 +234,6 @@ function paragraphs(value) {
     .map(part => '<p>' + escapeHtml(part).replace(/\n/g, '<br>') + '</p>').join('');
 }
 
-export function lectureBackHtml(card, media) {
-  const slideImages = card.pages.map(page => {
-    const name = media.get(page);
-    if (!name) throw new Error('Source image for PDF page ' + page + ' is missing from the Anki package.');
-    return '<figure class="lecture-page"><figcaption>PDF page ' + page +
-      '</figcaption><img src="' + escapeHtml(name) + '" alt="PDF page ' + page + '"></figure>';
-  }).join('');
-  const pageText = card.pages.map(page => {
-    const original = card.textByPage?.[page] || '';
-    return '<div class="lecture-page-text"><h4>Page ' + page +
-      '</h4><div class="lecture-verbatim">' +
-      (original.trim() ? escapeHtml(original) : '<em>No selectable PDF text on this page; see its image above.</em>') +
-      '</div></div>';
-  }).join('');
-  const explanation = normalizeLectureExplanation(card.explanation);
-  const section = (title, values) => values.length
-    ? '<section class="lecture-notes-section"><h3>' + title + '</h3><ul>' +
-      values.map(v => '<li>' + escapeHtml(v) + '</li>').join('') + '</ul></section>' : '';
-  return [
-    '<section class="lecture-source-images"><h3>Original slides</h3>' + slideImages + '</section>',
-    '<section class="lecture-source-text"><h3>Full extracted PDF text</h3>' + pageText + '</section>',
-    '<section class="lecture-explanation"><h3>Detailed explanation</h3>',
-    explanation.overview ? '<div class="lecture-overview">' + paragraphs(explanation.overview) + '</div>' : '',
-    paragraphs(explanation.explanation),
-    '</section>',
-    section('Key points to remember', explanation.keyPoints),
-    section('Examples and applications', explanation.examples),
-    section('Common mistakes', explanation.pitfalls)
-  ].join('');
-}
-
-
 // Original (pre-redesign) note layout. The "Text" field is intentionally NOT
 // referenced in qfmt or afmt: Anki can search it in the collection browser,
 // but studying the card shows just the topic, slides and explanation.
