@@ -52,10 +52,11 @@
         <div class="panel-heading compact"><span class="step">2</span><div><h2>Deck options</h2><p>Your selections are automatically saved on this device.</p></div></div>
         <div class="form-grid">
           <div><label for="density">Card density</label><select id="density"><option value="compact" selected>Compact</option><option value="balanced">Balanced</option><option value="detailed">Detailed</option></select></div>
-          <div><label for="card-mode">Card style</label><select id="card-mode"><option value="questions">Questions</option><option value="topics" selected>Topic explanations</option></select></div>
+          <div><label for="card-mode">Card style</label><select id="card-mode"><option value="questions">Questions</option><option value="topics" selected>Topic explanations</option><option value="lecture">Lecture slides + full text + deep explanations</option></select></div>
           <div><label for="strategy">PDF reading</label><select id="strategy"><option value="auto">Auto · best available</option><option value="direct" selected>Direct PDF only</option><option value="images">Rendered pages</option><option value="text">Text only</option></select></div>
           <div><label for="language">Language</label><select id="language"><option value="auto" selected>Detect from source</option><option value="English">English</option><option value="German">German</option></select></div>
         </div>
+        <p id="lecture-mode-hint" class="privacy-mini" hidden>PDF-only legacy-style cards: a topic title on the front; every original slide image, the full extractable text of each source page, and a much more detailed AI explanation on the back. Source images are always included. This mode analyzes rendered pages visually and may make several Gemini calls per PDF.</p>
         <label class="check option-check"><input id="include-images" type="checkbox" checked> Embed cited source pages in cards</label>
         <div class="source-image-limit"><label for="max-source-images">Images/card</label><select id="max-source-images"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="all" selected>All cited</option></select></div>
       </aside>
