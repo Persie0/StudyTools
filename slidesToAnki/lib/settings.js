@@ -18,6 +18,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
   language: 'auto',
   includeImages: true,
   maxSourceImages: 'all',
+  legacyIncludeText: true,
+  legacyDetailedGrouping: false,
+  legacySlideBySlide: false,
   activeInput: 'pdf',
   model: 'gemini-2.5-flash'
 });
@@ -29,6 +32,9 @@ export function normalizeSettings(value) {
     if (allowed.includes(candidate[key])) result[key] = candidate[key];
   }
   if (typeof candidate.includeImages === 'boolean') result.includeImages = candidate.includeImages;
+  for (const setting of ['legacyIncludeText', 'legacyDetailedGrouping', 'legacySlideBySlide']) {
+    if (typeof candidate[setting] === 'boolean') result[setting] = candidate[setting];
+  }
   if (typeof candidate.model === 'string' && /^gemini-[a-z0-9][a-z0-9._-]*$/i.test(candidate.model)) {
     result.model = candidate.model;
   }
