@@ -31,6 +31,10 @@ const API_KEY_STORAGE = 'studytoolsGeminiKeysV2';
 const MODEL_STORAGE = 'studytoolsGeminiModelV2';
 const REMEMBER_KEY_STORAGE = 'studytoolsRememberGeminiKeysV1';
 
+function readStoredValue(key) {
+  try { return localStorage.getItem(key); } catch (_) { return null; }
+}
+
 const $ = id => document.getElementById(id);
 const ui = {
   apiKeys: $('api-keys'), rememberKeys: $('remember-keys'), saveKeys: $('save-keys'), clearKeys: $('clear-keys'),
@@ -104,7 +108,7 @@ function captureSettings() {
 }
 
 function persistSettings() {
-  saveSettings(localStorage, captureSettings());
+  try { saveSettings(localStorage, captureSettings()); } catch (_) {}
 }
 
 function restoreSettings(saved) {
@@ -135,7 +139,7 @@ function updateGenerateState() {
 }
 
 function renderModelOptions(requested = '') {
-  const selected = chooseModel(state.models, requested || localStorage.getItem(MODEL_STORAGE) || DEFAULT_MODEL);
+  const selected = chooseModel(state.models, requested || readStoredValue(MODEL_STORAGE) || DEFAULT_MODEL);
   ui.model.innerHTML = state.models.map(model => {
     const id = normalizeModelId(model.id || model.name);
     return `<option value="${escapeHtml(id)}">${escapeHtml(modelLabel(model))}</option>`;
@@ -701,12 +705,13 @@ function bindEvents() {
 }
 
 function init() {
-  const savedKeys = localStorage.getItem(API_KEY_STORAGE) || '';
-  ui.rememberKeys.checked = localStorage.getItem(REMEMBER_KEY_STORAGE) === 'true' || Boolean(savedKeys);
+  const savedKeys = readStoredValue(API_KEY_STORAGE) || '';
+  ui.rememberKeys.checked = readStoredValue(REMEMBER_KEY_STORAGE) === 'true' || Boolean(savedKeys);
   if (savedKeys) ui.apiKeys.value = savedKeys;
-  const savedSettings = loadSettings(localStorage);
+  let savedSettings = null;
+  try { savedSettings = loadSettings(localStorage); } catch (_) {}
   restoreSettings(savedSettings);
-  const storedModel = savedSettings?.model || localStorage.getItem(MODEL_STORAGE) || DEFAULT_MODEL;
+  const storedModel = savedSettings?.model || readStoredValue(MODEL_STORAGE) || DEFAULT_MODEL;
   state.models = mergeModelLists([{ id: storedModel, name: `models/${storedModel}` }], fallbackModelList());
   renderModelOptions(storedModel);
   renderFiles();
