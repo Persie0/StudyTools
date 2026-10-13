@@ -442,3 +442,20 @@ test('application informs the user of automatic cooldown without resetting progr
   assert.match(app, /s before retrying automatically/);
   assert.match(app, /completed work are preserved/);
 });
+
+
+test('zero allowance is not mistaken for a one-minute cooldown', async () => {
+  assert.equal(classifyApiError(429, 'Quota exceeded, limit: 0 for generate_content_free_tier_requests').kind,
+    'quota-unavailable');
+  let requests = 0;
+  const client = new GeminiClient('test-key', {
+    fetchImpl: async () => {
+      requests++;
+      return jsonResponse({ error: { status: 'RESOURCE_EXHAUSTED',
+        message: 'Quota exceeded for metric generate_content_free_tier_requests, limit: 0' } }, 429);
+    },
+    sleepImpl: async () => { throw Error('Quota zero must fail immediately'); }
+  });
+  await assert.rejects(client.generateJson({ prompt: 'pages' }), /zero requests allocated/);
+  assert.equal(requests, 1);
+});
