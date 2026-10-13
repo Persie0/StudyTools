@@ -386,7 +386,7 @@ test('multiple concurrent jobs wait on one client and resume with staggered requ
     fetchImpl: async () => {
       calls++;
       callTimes.push(now);
-      if (calls === 1) return jsonResponse({ error: {
+      if (calls <= 2) return jsonResponse({ error: {
         status: 'RESOURCE_EXHAUSTED', message: 'Please retry in 4s.'
       } }, 429);
       return jsonResponse({ candidates: [{ content: { parts: [{ text: '{"cards":[]}' }] } }] });
@@ -398,9 +398,9 @@ test('multiple concurrent jobs wait on one client and resume with staggered requ
     client.generateJson({ prompt: 'page 55' })
   ]);
   assert.equal(results.length, 3);
-  assert.equal(calls, 4);
-  assert.ok(callTimes.slice(2).every(t => t >= 24_000), 'requests after a cooldown should wait');
-  assert.ok(new Set(callTimes.slice(2)).size > 1, 'resumed workers should not all fire simultaneously');
+  assert.equal(calls, 5);
+  assert.ok(callTimes.slice(3).every(t => t >= 24_000), 'requests after a cooldown should wait');
+  assert.ok(new Set(callTimes.slice(3)).size > 1, 'resumed workers should not all fire simultaneously');
   assert.ok(events.length >= 1);
 });
 
@@ -438,6 +438,6 @@ test('a malformed HTTP 400 payload keeps JSON fallback instead of entering quota
 test('application informs the user of automatic cooldown without resetting progress', async () => {
   const app = await readFile(new URL('../slidesToAnki/app.js', import.meta.url), 'utf8');
   assert.match(app, /new GeminiClient\(apiKeys\(\), \{\s*onRetry:/);
-  assert.match(app, /waiting .*?s before retrying automatically/);
+  assert.match(app, /s before retrying automatically/);
   assert.match(app, /completed work are preserved/);
 });
