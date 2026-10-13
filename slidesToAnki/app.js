@@ -7,7 +7,7 @@ import {
   modelLabel,
   modelMetadata,
   normalizeModelId
-} from './lib/gemini.js';
+} from './lib/gemini.js?v=20261013-quota-retry';
 import {
   buildPdfCardPrompt,
   buildSlideExplanationPrompt,
