@@ -275,6 +275,9 @@ export function classifyApiError(status, message = '', response = null, metadata
     return { kind: 'auth', retry: false, cooldownMs: 24 * 60 * 60 * 1000 };
   }
   if (status === 429 || /quota|rate limit|too many requests|resource has been exhausted/i.test(value)) {
+    if (/\blimit\s*[:=]\s*0(?:\D|$)/i.test(value)) {
+      return { kind: 'quota-unavailable', retry: false, cooldownMs: 0 };
+    }
     if (metadata.quotaScope === 'day' || /per.?day|daily\s+(?:quota|limit)|\bRPD\b/i.test(value)) {
       return { kind: 'daily-quota', retry: false, cooldownMs: 0 };
     }
@@ -376,8 +379,9 @@ export class GeminiClient {
           credentials: 'omit'
         });
         if (response.ok) return { ok: true, status: response.status, kind: 'valid', reason: '', message: 'Accepted' };
-        const { message, reason } = await responseError(response);
-        const { kind } = classifyApiError(response.status, `${reason} ${message}`, response);
+        const { message, reason, quotaScope: scope, retryDelayMs } = await responseError(response);
+        const { kind } = classifyApiError(response.status, `${reason} ${message}`, response,
+          { quotaScope: scope, retryDelayMs });
         return { ok: false, status: response.status, kind, reason, message };
       } catch (error) {
         return { ok: false, status: 0, kind: 'network', reason: '', message: String(error?.message || error) };
@@ -570,6 +574,10 @@ export class GeminiClient {
           ' (HTTP ' + response.status + (reason ? ' ' + reason : '') + '): ' +
           message.replace(/[.!?\s]+$/, '') + '. Check your key in Google AI Studio.');
         continue;
+      }
+      if (classification.kind === 'quota-unavailable') {
+        throw new Error('Gemini has zero requests allocated for this model/tier (HTTP ' + response.status +
+          '). Waiting cannot restore unavailable quota. Switch models or enable API quota/billing in Google AI Studio.');
       }
       if (classification.kind === 'daily-quota') {
         throw new Error('Gemini DAILY request quota exhausted (HTTP ' + response.status +
