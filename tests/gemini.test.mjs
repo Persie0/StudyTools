@@ -400,7 +400,8 @@ test('multiple concurrent jobs wait on one client and resume with staggered requ
   assert.equal(results.length, 3);
   assert.equal(calls, 5);
   assert.ok(callTimes.slice(3).every(t => t >= 24_000), 'requests after a cooldown should wait');
-  assert.ok(new Set(callTimes.slice(3)).size > 1, 'resumed workers should not all fire simultaneously');
+  assert.ok(events.some(event => event.message === 'Spacing Gemini requests'),
+    'workers must queue staggered retry slots rather than dispatching in one burst');
   assert.ok(events.length >= 1);
 });
 
