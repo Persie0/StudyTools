@@ -221,25 +221,70 @@ export function extractJsonValue(text) {
   }
 }
 
-function retrySeconds(response, message) {
-  const header = response?.headers?.get?.('retry-after');
-  if (header && Number.isFinite(Number(header))) return Math.max(1, Number(header));
-  const match = String(message || '').match(/retry(?:\s+in|\s+after)?\s*([\d.]+)\s*s/i);
-  return match ? Math.max(1, Number(match[1])) : null;
+const DEFAULT_RATE_LIMIT_WAIT_MS = 65_000;
+const MAX_RATE_RECOVERY_MS = 10 * 60_000;
+const MAX_RATE_LIMIT_RETRIES = 9;
+const STAGGER_AFTER_RATE_LIMIT_MS = 1000;
+
+function parseDurationMs(value) {
+  const match = String(value || '').match(/([\d.]+)\s*(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m)\b/i);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount < 0) return null;
+  const unit = match[2].toLowerCase();
+  const factor = unit.startsWith('ms') || unit.startsWith('milli') || unit.startsWith('msec') ? 1 :
+    unit === 'm' || unit.startsWith('min') ? 60_000 : 1000;
+  return Math.max(1000, Math.ceil(amount * factor));
 }
 
-export function classifyApiError(status, message = '', response = null) {
-  const text = String(message || '');
-  // Google reports API_KEY_INVALID as HTTP 400, not HTTP 401. It must
-  // disable the rejected key and allow the next key to be tried.
-  if (/API_KEY_INVALID|API key not valid|invalid API key|API key was reported as leaked/i.test(text)) {
+function retryMilliseconds(response, message, details = []) {
+  const header = response?.headers?.get?.('retry-after');
+  if (header) {
+    if (Number.isFinite(Number(header))) return Math.max(1000, Math.ceil(Number(header) * 1000));
+    const date = Date.parse(header);
+    if (Number.isFinite(date)) return Math.max(1000, date - Date.now());
+  }
+  for (const detail of details) {
+    if (detail?.retryDelay) {
+      const milliseconds = parseDurationMs(detail.retryDelay);
+      if (milliseconds != null) return milliseconds;
+    }
+  }
+  const match = String(message || '').match(/(?:please\s+)?retry(?:\s+in|\s+after)?\s*([\d.]+\s*(?:ms|milliseconds?|s|seconds?|m|minutes?))/i);
+  return match ? parseDurationMs(match[1]) : null;
+}
+
+function quotaScope(message, details = []) {
+  const descriptions = [String(message || '')];
+  for (const detail of details) {
+    if (Array.isArray(detail?.violations)) {
+      for (const violation of detail.violations) {
+        descriptions.push([violation.quotaId, violation.quotaMetric, violation.description].filter(Boolean).join(' '));
+      }
+    }
+  }
+  const combined = descriptions.join(' ');
+  if (/per.?day|requests?\s+per\s+day|daily\s+(?:quota|limit)|\bRPD\b/i.test(combined)) return 'day';
+  if (/per.?minute|requests?\s+per\s+minute|\bRPM\b|\bTPM\b/i.test(combined)) return 'minute';
+  return null;
+}
+
+export function classifyApiError(status, message = '', response = null, metadata = {}) {
+  const value = String(message || '');
+  if (/API_KEY_INVALID|API key not valid|invalid API key|API key was reported as leaked/i.test(value)) {
     return { kind: 'auth', retry: false, cooldownMs: 24 * 60 * 60 * 1000 };
   }
-  if (status === 401 || status === 403) return { kind: 'auth', retry: false, cooldownMs: 24 * 60 * 60 * 1000 };
-  if (status === 429 || /quota|rate limit|too many requests/i.test(text)) {
-    return { kind: 'rate-limit', retry: true, cooldownMs: (retrySeconds(response, text) || 30) * 1000 };
+  if (status === 429 || /quota|rate limit|too many requests|resource has been exhausted/i.test(value)) {
+    if (metadata.quotaScope === 'day' || /per.?day|daily\s+(?:quota|limit)|\bRPD\b/i.test(value)) {
+      return { kind: 'daily-quota', retry: false, cooldownMs: 0 };
+    }
+    return {
+      kind: 'rate-limit', retry: true,
+      cooldownMs: metadata.retryDelayMs ?? retryMilliseconds(response, value) ?? DEFAULT_RATE_LIMIT_WAIT_MS
+    };
   }
-  if (status === 503 || status === 504 || /overloaded|temporarily unavailable|timeout/i.test(text)) {
+  if (status === 401 || status === 403) return { kind: 'auth', retry: false, cooldownMs: 24 * 60 * 60 * 1000 };
+  if (status === 503 || status === 504 || /overloaded|temporarily unavailable|timeout/i.test(value)) {
     return { kind: 'overloaded', retry: true, cooldownMs: 15000 };
   }
   if (status === 400) return { kind: 'bad-request', retry: false, cooldownMs: 0 };
@@ -265,19 +310,22 @@ export function parseApiKeys(input) {
 async function responseError(response) {
   let message = `HTTP ${response.status}`;
   let reason = '';
+  let scope = null;
+  let retryDelayMs = null;
   try {
     const raw = await (response.clone ? response.clone() : response).text();
     try {
       const data = JSON.parse(raw);
       message = String(data?.error?.message || data?.message || message);
-      const details = data?.error?.details;
-      reason = Array.isArray(details) ?
-        String(details.find(item => item?.reason)?.reason || '') : '';
+      const details = Array.isArray(data?.error?.details) ? data.error.details : [];
+      reason = String(details.find(item => item?.reason)?.reason || data?.error?.status || '');
+      scope = quotaScope(message, details);
+      retryDelayMs = retryMilliseconds(response, message, details);
     } catch (_) {
       message = raw || message;
     }
   } catch (_) {}
-  return { message, reason };
+  return { message, reason, quotaScope: scope, retryDelayMs };
 }
 
 // Short one-way fingerprint to compare the actual browser key bytes with a
@@ -293,11 +341,21 @@ async function fingerprintKey(key) {
 }
 
 export class GeminiClient {
-  constructor(apiKeys, { fetchImpl = globalThis.fetch, sleepImpl = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
+  constructor(apiKeys, {
+    fetchImpl = globalThis.fetch,
+    sleepImpl = ms => new Promise(resolve => setTimeout(resolve, ms)),
+    nowImpl = () => Date.now(),
+    onRetry = null
+  } = {}) {
     // Native Window.fetch requires a Window receiver. Calling a stored unbound
     // reference as this.fetch(...) otherwise throws TypeError: Illegal invocation.
     this.fetch = fetchImpl.bind(globalThis);
     this.sleep = sleepImpl;
+    this.now = nowImpl;
+    this.onRetry = onRetry;
+    this.dispatchQueue = Promise.resolve();
+    this.nextDispatchAt = 0;
+    this.staggerUntil = 0;
     this.keys = parseApiKeys(apiKeys)
       .map((key, index) => ({ key, index: index + 1, availableAt: 0, disabled: false }));
     if (!this.keys.length) throw new Error('Add at least one Gemini API key.');
