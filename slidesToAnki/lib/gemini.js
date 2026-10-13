@@ -221,25 +221,73 @@ export function extractJsonValue(text) {
   }
 }
 
-function retrySeconds(response, message) {
-  const header = response?.headers?.get?.('retry-after');
-  if (header && Number.isFinite(Number(header))) return Math.max(1, Number(header));
-  const match = String(message || '').match(/retry(?:\s+in|\s+after)?\s*([\d.]+)\s*s/i);
-  return match ? Math.max(1, Number(match[1])) : null;
+const DEFAULT_RATE_LIMIT_WAIT_MS = 65_000;
+const MAX_RATE_RECOVERY_MS = 10 * 60_000;
+const MAX_RATE_LIMIT_RETRIES = 9;
+const STAGGER_AFTER_RATE_LIMIT_MS = 1000;
+
+function parseDurationMs(value) {
+  const match = String(value || '').match(/([\d.]+)\s*(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m)\b/i);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount < 0) return null;
+  const unit = match[2].toLowerCase();
+  const factor = unit.startsWith('ms') || unit.startsWith('milli') || unit.startsWith('msec') ? 1 :
+    unit === 'm' || unit.startsWith('min') ? 60_000 : 1000;
+  return Math.max(1000, Math.ceil(amount * factor));
 }
 
-export function classifyApiError(status, message = '', response = null) {
-  const text = String(message || '');
-  // Google reports API_KEY_INVALID as HTTP 400, not HTTP 401. It must
-  // disable the rejected key and allow the next key to be tried.
-  if (/API_KEY_INVALID|API key not valid|invalid API key|API key was reported as leaked/i.test(text)) {
+function retryMilliseconds(response, message, details = []) {
+  const header = response?.headers?.get?.('retry-after');
+  if (header) {
+    if (Number.isFinite(Number(header))) return Math.max(1000, Math.ceil(Number(header) * 1000));
+    const date = Date.parse(header);
+    if (Number.isFinite(date)) return Math.max(1000, date - Date.now());
+  }
+  for (const detail of details) {
+    if (detail?.retryDelay) {
+      const milliseconds = parseDurationMs(detail.retryDelay);
+      if (milliseconds != null) return milliseconds;
+    }
+  }
+  const match = String(message || '').match(/(?:please\s+)?retry(?:\s+in|\s+after)?\s*([\d.]+\s*(?:ms|milliseconds?|s|seconds?|m|minutes?))/i);
+  return match ? parseDurationMs(match[1]) : null;
+}
+
+function quotaScope(message, details = []) {
+  const descriptions = [String(message || '')];
+  for (const detail of details) {
+    if (Array.isArray(detail?.violations)) {
+      for (const violation of detail.violations) {
+        descriptions.push([violation.quotaId, violation.quotaMetric, violation.description].filter(Boolean).join(' '));
+      }
+    }
+  }
+  const combined = descriptions.join(' ');
+  if (/per.?day|requests?\s+per\s+day|daily\s+(?:quota|limit)|\bRPD\b/i.test(combined)) return 'day';
+  if (/per.?minute|requests?\s+per\s+minute|\bRPM\b|\bTPM\b/i.test(combined)) return 'minute';
+  return null;
+}
+
+export function classifyApiError(status, message = '', response = null, metadata = {}) {
+  const value = String(message || '');
+  if (/API_KEY_INVALID|API key not valid|invalid API key|API key was reported as leaked/i.test(value)) {
     return { kind: 'auth', retry: false, cooldownMs: 24 * 60 * 60 * 1000 };
   }
-  if (status === 401 || status === 403) return { kind: 'auth', retry: false, cooldownMs: 24 * 60 * 60 * 1000 };
-  if (status === 429 || /quota|rate limit|too many requests/i.test(text)) {
-    return { kind: 'rate-limit', retry: true, cooldownMs: (retrySeconds(response, text) || 30) * 1000 };
+  if (status === 429 || /quota|rate limit|too many requests|resource has been exhausted/i.test(value)) {
+    if (/\blimit\s*[:=]\s*0(?:\D|$)/i.test(value)) {
+      return { kind: 'quota-unavailable', retry: false, cooldownMs: 0 };
+    }
+    if (metadata.quotaScope === 'day' || /per.?day|daily\s+(?:quota|limit)|\bRPD\b/i.test(value)) {
+      return { kind: 'daily-quota', retry: false, cooldownMs: 0 };
+    }
+    return {
+      kind: 'rate-limit', retry: true,
+      cooldownMs: metadata.retryDelayMs ?? retryMilliseconds(response, value) ?? DEFAULT_RATE_LIMIT_WAIT_MS
+    };
   }
-  if (status === 503 || status === 504 || /overloaded|temporarily unavailable|timeout/i.test(text)) {
+  if (status === 401 || status === 403) return { kind: 'auth', retry: false, cooldownMs: 24 * 60 * 60 * 1000 };
+  if (status === 503 || status === 504 || /overloaded|temporarily unavailable|timeout/i.test(value)) {
     return { kind: 'overloaded', retry: true, cooldownMs: 15000 };
   }
   if (status === 400) return { kind: 'bad-request', retry: false, cooldownMs: 0 };
@@ -265,19 +313,22 @@ export function parseApiKeys(input) {
 async function responseError(response) {
   let message = `HTTP ${response.status}`;
   let reason = '';
+  let scope = null;
+  let retryDelayMs = null;
   try {
     const raw = await (response.clone ? response.clone() : response).text();
     try {
       const data = JSON.parse(raw);
       message = String(data?.error?.message || data?.message || message);
-      const details = data?.error?.details;
-      reason = Array.isArray(details) ?
-        String(details.find(item => item?.reason)?.reason || '') : '';
+      const details = Array.isArray(data?.error?.details) ? data.error.details : [];
+      reason = String(details.find(item => item?.reason)?.reason || data?.error?.status || '');
+      scope = quotaScope(message, details);
+      retryDelayMs = retryMilliseconds(response, message, details);
     } catch (_) {
       message = raw || message;
     }
   } catch (_) {}
-  return { message, reason };
+  return { message, reason, quotaScope: scope, retryDelayMs };
 }
 
 // Short one-way fingerprint to compare the actual browser key bytes with a
@@ -293,11 +344,21 @@ async function fingerprintKey(key) {
 }
 
 export class GeminiClient {
-  constructor(apiKeys, { fetchImpl = globalThis.fetch, sleepImpl = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
+  constructor(apiKeys, {
+    fetchImpl = globalThis.fetch,
+    sleepImpl = ms => new Promise(resolve => setTimeout(resolve, ms)),
+    nowImpl = () => Date.now(),
+    onRetry = null
+  } = {}) {
     // Native Window.fetch requires a Window receiver. Calling a stored unbound
     // reference as this.fetch(...) otherwise throws TypeError: Illegal invocation.
     this.fetch = fetchImpl.bind(globalThis);
     this.sleep = sleepImpl;
+    this.now = nowImpl;
+    this.onRetry = onRetry;
+    this.dispatchQueue = Promise.resolve();
+    this.nextDispatchAt = 0;
+    this.staggerUntil = 0;
     this.keys = parseApiKeys(apiKeys)
       .map((key, index) => ({ key, index: index + 1, availableAt: 0, disabled: false }));
     if (!this.keys.length) throw new Error('Add at least one Gemini API key.');
@@ -318,8 +379,9 @@ export class GeminiClient {
           credentials: 'omit'
         });
         if (response.ok) return { ok: true, status: response.status, kind: 'valid', reason: '', message: 'Accepted' };
-        const { message, reason } = await responseError(response);
-        const { kind } = classifyApiError(response.status, `${reason} ${message}`, response);
+        const { message, reason, quotaScope: scope, retryDelayMs } = await responseError(response);
+        const { kind } = classifyApiError(response.status, `${reason} ${message}`, response,
+          { quotaScope: scope, retryDelayMs });
         return { ok: false, status: response.status, kind, reason, message };
       } catch (error) {
         return { ok: false, status: 0, kind: 'network', reason: '', message: String(error?.message || error) };
@@ -425,55 +487,132 @@ export class GeminiClient {
     throw new Error(`Gemini API error: ${message}`);
   }
 
-  async #requestWithKeys(url, init, { maxRounds = 2, allowBadRequestReturn = false } = {}) {
-    const maxAttempts = Math.max(this.keys.length * maxRounds, 2);
-    let lastError = null;
-
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      let keyEntry = this.#nextAvailableKey();
-      if (!keyEntry) {
-        const active = this.keys.filter(entry => !entry.disabled);
-        if (!active.length) {
-          throw new Error(lastError?.message || 'All Gemini API keys were rejected. Check the keys in Google AI Studio.');
-        }
-        const waitMs = Math.max(250, Math.min(...active.map(entry => entry.availableAt)) - Date.now());
-        await this.sleep(waitMs);
-        keyEntry = this.#nextAvailableKey();
-        if (!keyEntry) continue;
+  async #waitUntil(until, context) {
+    while (this.now() < until) {
+      const remainingMs = until - this.now();
+      if (typeof this.onRetry === 'function') {
+        try { this.onRetry({ ...context, remainingMs, waitMs: remainingMs }); } catch (_) {}
       }
+      await this.sleep(Math.min(remainingMs, 5000));
+    }
+  }
 
+  async #reserveKey() {
+    // Limit the order of REQUEST STARTS only, not generation throughput.
+    // Concurrent workers that encounter the same cooldown share this gate.
+    const predecessor = this.dispatchQueue;
+    let release;
+    this.dispatchQueue = new Promise(resolve => { release = resolve; });
+    await predecessor;
+    try {
+      const active = this.keys.filter(key => !key.disabled);
+      if (!active.length) return null;
+      let key = this.#nextAvailableKey();
+      if (!key) {
+        const earliest = Math.min(...active.map(item => item.availableAt));
+        await this.#waitUntil(earliest, {
+          kind: 'rate-limit', message: 'Gemini quota cooldown'
+        });
+        key = this.#nextAvailableKey();
+      }
+      if (!key) return null;
+      if (this.now() < this.nextDispatchAt) {
+        await this.#waitUntil(this.nextDispatchAt, {
+          kind: 'rate-limit', keyIndex: key.index, message: 'Spacing Gemini requests'
+        });
+      }
+      if (this.now() < key.availableAt) {
+        await this.#waitUntil(key.availableAt, {
+          kind: 'rate-limit', keyIndex: key.index, message: 'Gemini quota cooldown'
+        });
+      }
+      if (this.now() < this.staggerUntil) {
+        this.nextDispatchAt = this.now() + STAGGER_AFTER_RATE_LIMIT_MS;
+      }
+      return key;
+    } finally {
+      release();
+    }
+  }
+
+  async #requestWithKeys(url, init, { maxRounds = 2, allowBadRequestReturn = false } = {}) {
+    const baseAttempts = Math.max(this.keys.length * maxRounds, 2);
+    const startedAt = this.now();
+    let lastError = null;
+    let lastKind = null;
+    let rateFailures = 0;
+
+    for (let attempt = 0; attempt < baseAttempts ||
+      (lastKind === 'rate-limit' && rateFailures < MAX_RATE_LIMIT_RETRIES); attempt++) {
+      if (this.now() - startedAt >= MAX_RATE_RECOVERY_MS) break;
+      const keyEntry = await this.#reserveKey();
+      if (!keyEntry) {
+        throw new Error(lastError?.message || 'All Gemini API keys were rejected. Check Google AI Studio.');
+      }
+      if (this.now() - startedAt >= MAX_RATE_RECOVERY_MS) break;
       const headers = { ...(init.headers || {}), 'x-goog-api-key': keyEntry.key };
       let response;
       try {
         response = await this.fetch(url, { ...init, headers });
       } catch (error) {
-        // A JavaScript invocation bug is not a transient Google API failure.
         if (/illegal invocation/i.test(String(error?.message || ''))) throw error;
         lastError = error;
-        keyEntry.availableAt = Date.now() + 1000;
+        lastKind = 'network';
+        keyEntry.availableAt = this.now() + 1000;
         continue;
       }
 
       if (response.ok) return response;
-      const { message, reason } = await responseError(response);
-      const classification = classifyApiError(response.status, `${reason} ${message}`, response);
+      const { message, reason, quotaScope: scope, retryDelayMs } = await responseError(response);
+      const classification = classifyApiError(
+        response.status, reason + ' ' + message, response, { quotaScope: scope, retryDelayMs }
+      );
       if (classification.kind === 'auth') {
         keyEntry.disabled = true;
-        lastError = new Error(
-          `Gemini rejected API key #${keyEntry.index} (HTTP ${response.status}${reason ? ` ${reason}` : ''}): ${message.replace(/[.!?\s]+$/, '')}. ` +
-          'Compare this browser request with the working SDK request using Check keys (never share key values).'
-        );
-        // Unlike a malformed request, an invalid key is not a reason to retry
-        // the same key without responseMimeType; try the next key instead.
+        lastKind = 'auth';
+        lastError = new Error('Gemini rejected API key #' + keyEntry.index +
+          ' (HTTP ' + response.status + (reason ? ' ' + reason : '') + '): ' +
+          message.replace(/[.!?\s]+$/, '') + '. Check your key in Google AI Studio.');
         continue;
       }
-      if (allowBadRequestReturn && response.status === 400) return response;
-      if (classification.cooldownMs) keyEntry.availableAt = Date.now() + classification.cooldownMs;
-      if (!classification.retry) throw new Error(`Gemini API error (HTTP ${response.status}): ${message}`);
-      lastError = new Error(message || `HTTP ${response.status}`);
+      if (classification.kind === 'quota-unavailable') {
+        throw new Error('Gemini has zero requests allocated for this model/tier (HTTP ' + response.status +
+          '). Waiting cannot restore unavailable quota. Switch models or enable API quota/billing in Google AI Studio.');
+      }
+      if (classification.kind === 'daily-quota') {
+        throw new Error('Gemini DAILY request quota exhausted (HTTP ' + response.status +
+          '). Waiting one minute will not reset it. Wait for the daily reset, use another model/project with available quota, or review limits and billing in Google AI Studio.');
+      }
+      if (allowBadRequestReturn && classification.kind === 'bad-request') return response;
+      if (!classification.retry) {
+        throw new Error('Gemini request rejected (HTTP ' + response.status +
+          (reason ? ' ' + reason : '') + '): ' + message);
+      }
+
+      lastKind = classification.kind;
+      if (classification.kind === 'rate-limit') {
+        rateFailures++;
+        const cooldown = Math.max(1000, classification.cooldownMs);
+        if (this.now() - startedAt + cooldown > MAX_RATE_RECOVERY_MS ||
+            rateFailures >= MAX_RATE_LIMIT_RETRIES) {
+          throw new Error('Gemini minute rate limit is still exceeded (HTTP ' +
+            response.status + ') after ' + rateFailures + ' attempt(s). ' +
+            'Automatic retries stopped after the maximum wait. Try later, reduce parallel explanations, or change models.');
+        }
+        keyEntry.availableAt = Math.max(keyEntry.availableAt, this.now() + cooldown);
+        this.staggerUntil = Math.max(this.staggerUntil, this.now() + MAX_RATE_RECOVERY_MS);
+        lastError = new Error('Gemini rate limit (HTTP ' + response.status + '): ' + message);
+      } else {
+        keyEntry.availableAt = Math.max(keyEntry.availableAt, this.now() + classification.cooldownMs);
+        lastError = new Error('Gemini temporarily unavailable (HTTP ' + response.status + '): ' + message);
+      }
     }
 
-    throw new Error(`Gemini request failed after retries${lastError?.message ? `: ${lastError.message}` : '.'}`);
+    if (lastKind === 'rate-limit') {
+      throw new Error('Gemini rate limit stayed active despite automatic cooldowns. ' +
+        'Try later, reduce parallel explanations, or choose a model with remaining quota.');
+    }
+    throw new Error(lastError?.message || 'Gemini request failed after retries. Check connectivity and try again.');
   }
 
   #nextAvailableKey() {

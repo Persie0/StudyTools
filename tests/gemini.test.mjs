@@ -305,3 +305,157 @@ test('GeminiClient.generateJson recovers malformed escaped LaTeX in the actual r
   });
   assert.equal((await client.generateJson({ prompt: 'Summarize math' })).cards[0].back, back);
 });
+
+
+test('minute quota parses Google RetryInfo with fractional seconds and resource exhausted', async () => {
+  let now = 100_000;
+  const sleeps = [];
+  const statuses = [];
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls++;
+    if (calls === 1) return jsonResponse({
+      error: {
+        code: 429, message: 'Resource has been exhausted. Please retry in 1.5s.',
+        status: 'RESOURCE_EXHAUSTED',
+        details: [
+          { '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+            violations: [{ quotaId: 'GenerateRequestsPerMinutePerProjectPerModel', description: 'Limit 20 per minute' }] },
+          { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '1.5s' }
+        ]
+      }
+    }, 429);
+    return jsonResponse({ candidates: [{ content: { parts: [{ text: '{"groups":[]}' }] } }] });
+  };
+  const client = new GeminiClient('same-key', {
+    fetchImpl,
+    nowImpl: () => now,
+    sleepImpl: async ms => { sleeps.push(ms); now += ms; },
+    onRetry: status => statuses.push(status)
+  });
+  assert.deepEqual(await client.generateJson({ prompt: 'group all pages' }), { groups: [] });
+  assert.equal(calls, 2, 'retry must succeed, not fail after two 429-limited attempts');
+  assert.equal(sleeps.reduce((a, b) => a + b, 0), 1500);
+  assert.ok(statuses.some(x => x.kind === 'rate-limit' && x.remainingMs === 1500));
+});
+
+test('rate-limit message alone defaults to a minute cooldown, not 30 seconds', () => {
+  const verdict = classifyApiError(429, 'Resource has been exhausted (e.g. check quota).');
+  assert.deepEqual(verdict, { kind: 'rate-limit', retry: true, cooldownMs: 65_000 });
+  const seconds = new Response('', { status: 429, headers: { 'retry-after': '12' } });
+  assert.equal(classifyApiError(429, 'Resource has been exhausted', seconds).cooldownMs, 12_000);
+  assert.equal(classifyApiError(429, 'Please retry in 0.7s').cooldownMs, 1000);
+});
+
+test('daily quota violation exits immediately with an actionable error instead of waiting', async () => {
+  let calls = 0;
+  let waitMs = 0;
+  const client = new GeminiClient('same-key', {
+    fetchImpl: async () => {
+      calls++;
+      return jsonResponse({ error: {
+        status: 'RESOURCE_EXHAUSTED', message: 'Quota exceeded',
+        details: [{ '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+          violations: [{ quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier',
+            description: 'Daily quota' }] }]
+      } }, 429);
+    },
+    sleepImpl: async ms => { waitMs += ms; }
+  });
+  await assert.rejects(client.generateJson({ prompt: 'study' }),
+    /DAILY request quota exhausted.*Waiting one minute will not reset/);
+  assert.equal(calls, 1);
+  assert.equal(waitMs, 0);
+});
+
+test('HTTP 403 quota is classified before generic authentication, while actual bad keys remain auth', () => {
+  assert.equal(classifyApiError(403, 'quota exceeded per minute').kind, 'rate-limit');
+  assert.equal(classifyApiError(403, 'insufficient permissions').kind, 'auth');
+  assert.equal(classifyApiError(400, 'API_KEY_INVALID').kind, 'auth');
+});
+
+test('multiple concurrent jobs wait on one client and resume with staggered requests', async () => {
+  let now = 20_000;
+  const callTimes = [];
+  const events = [];
+  let calls = 0;
+  const client = new GeminiClient('test-key', {
+    nowImpl: () => now,
+    sleepImpl: async ms => { now += ms; },
+    onRetry: item => events.push(item),
+    fetchImpl: async () => {
+      calls++;
+      callTimes.push(now);
+      if (calls <= 2) return jsonResponse({ error: {
+        status: 'RESOURCE_EXHAUSTED', message: 'Please retry in 4s.'
+      } }, 429);
+      return jsonResponse({ candidates: [{ content: { parts: [{ text: '{"cards":[]}' }] } }] });
+    }
+  });
+  const results = await Promise.all([
+    client.generateJson({ prompt: 'page 40' }),
+    client.generateJson({ prompt: 'page 52' }),
+    client.generateJson({ prompt: 'page 55' })
+  ]);
+  assert.equal(results.length, 3);
+  assert.equal(calls, 5);
+  assert.ok(callTimes.slice(3).every(t => t >= 24_000), 'requests after a cooldown should wait');
+  assert.ok(events.some(event => event.message === 'Spacing Gemini requests'),
+    'workers must queue staggered retry slots rather than dispatching in one burst');
+  assert.ok(events.length >= 1);
+});
+
+test('permanent minute limit stops after bounded retries with explanatory message', async () => {
+  let now = 50_000;
+  let calls = 0;
+  const client = new GeminiClient('test-key', {
+    nowImpl: () => now,
+    sleepImpl: async ms => { now += ms; },
+    fetchImpl: async () => {
+      calls++;
+      return jsonResponse({ error: { status: 'RESOURCE_EXHAUSTED', message: 'Please retry in 1s.' } }, 429);
+    }
+  });
+  await assert.rejects(client.generateJson({ prompt: 'summarize' }),
+    /minute rate limit is still exceeded.*Automatic retries stopped/);
+  assert.equal(calls, 9);
+});
+
+test('a malformed HTTP 400 payload keeps JSON fallback instead of entering quota wait', async () => {
+  let count = 0;
+  const client = new GeminiClient('key', {
+    fetchImpl: async (_url, init) => {
+      count++;
+      if (count === 1) return jsonResponse({ error: { message: 'Unknown field responseMimeType' } }, 400);
+      assert.equal(JSON.parse(init.body).generationConfig, undefined);
+      return jsonResponse({ candidates: [{ content: { parts: [{ text: '{"cards":[]}' }] } }] });
+    },
+    sleepImpl: async () => { throw new Error('Bad-request fallback must not sleep'); }
+  });
+  assert.deepEqual(await client.generateJson({ prompt: 'a' }), { cards: [] });
+  assert.equal(count, 2);
+});
+
+test('application informs the user of automatic cooldown without resetting progress', async () => {
+  const app = await readFile(new URL('../slidesToAnki/app.js', import.meta.url), 'utf8');
+  assert.match(app, /new GeminiClient\(apiKeys\(\), \{\s*onRetry:/);
+  assert.match(app, /s before retrying automatically/);
+  assert.match(app, /completed work are preserved/);
+});
+
+
+test('zero allowance is not mistaken for a one-minute cooldown', async () => {
+  assert.equal(classifyApiError(429, 'Quota exceeded, limit: 0 for generate_content_free_tier_requests').kind,
+    'quota-unavailable');
+  let requests = 0;
+  const client = new GeminiClient('test-key', {
+    fetchImpl: async () => {
+      requests++;
+      return jsonResponse({ error: { status: 'RESOURCE_EXHAUSTED',
+        message: 'Quota exceeded for metric generate_content_free_tier_requests, limit: 0' } }, 429);
+    },
+    sleepImpl: async () => { throw Error('Quota zero must fail immediately'); }
+  });
+  await assert.rejects(client.generateJson({ prompt: 'pages' }), /zero requests allocated/);
+  assert.equal(requests, 1);
+});
