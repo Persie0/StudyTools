@@ -969,7 +969,18 @@ async function generate() {
   try {
     const model = currentModel();
     persistSettings();
-    const client = state.activeInput === 'json' ? null : new GeminiClient(apiKeys());
+    const client = state.activeInput === 'json' ? null : new GeminiClient(apiKeys(), {
+      onRetry: ({ kind, remainingMs, message }) => {
+        if (!state.busy) return;
+        const seconds = Math.max(1, Math.ceil(remainingMs / 1000));
+        if (kind === 'rate-limit') {
+          setStatus('Gemini request/minute limit reached — waiting ' + seconds +
+            's before retrying automatically. Your PDF and completed work are preserved.', null);
+        } else {
+          setStatus('Gemini: ' + (message || 'Retrying') + ' in ' + seconds + 's…', null);
+        }
+      }
+    });
     let results;
     if (state.activeInput === 'pdf') {
       results = [];
