@@ -405,7 +405,7 @@ test('multiple concurrent jobs wait on one client and resume with staggered requ
   assert.ok(events.length >= 1);
 });
 
-test('permanent minute limit stops after bounded retries with explanatory message', async () => {
+test('minute rate limits keep retrying past the old nine-attempt limit', async () => {
   let now = 50_000;
   let calls = 0;
   const client = new GeminiClient('test-key', {
@@ -413,12 +413,56 @@ test('permanent minute limit stops after bounded retries with explanatory messag
     sleepImpl: async ms => { now += ms; },
     fetchImpl: async () => {
       calls++;
-      return jsonResponse({ error: { status: 'RESOURCE_EXHAUSTED', message: 'Please retry in 1s.' } }, 429);
+      if (calls <= 12) return jsonResponse({
+        error: { status: 'RESOURCE_EXHAUSTED', message: 'Please retry in 1s.' }
+      }, 429);
+      return jsonResponse({ candidates: [{ content: { parts: [{ text: '{"cards":[]}' }] } }] });
     }
   });
-  await assert.rejects(client.generateJson({ prompt: 'summarize' }),
-    /minute rate limit is still exceeded.*Automatic retries stopped/);
-  assert.equal(calls, 9);
+  assert.deepEqual(await client.generateJson({ prompt: 'summarize' }), { cards: [] });
+  assert.equal(calls, 13);
+  assert.ok(now >= 62_000);
+});
+
+test('busy Gemini 503 responses continue beyond ten minutes until the page is generated', async () => {
+  let now = 100_000;
+  let calls = 0;
+  const events = [];
+  const client = new GeminiClient('test-key', {
+    nowImpl: () => now,
+    sleepImpl: async ms => { now += ms; },
+    onRetry: event => events.push(event),
+    fetchImpl: async () => {
+      calls++;
+      if (calls <= 17) return jsonResponse({
+        error: { status: 'UNAVAILABLE', message: 'This model is currently experiencing high demand.' }
+      }, 503);
+      return jsonResponse({ candidates: [{ content: { parts: [{ text: '{"cards":[{"front":"Done"}]}' }] } }] });
+    }
+  });
+  const cards = await client.generateJson({ prompt: 'explain pages 43, 44, 45' });
+  assert.equal(cards.cards[0].front, 'Done');
+  assert.equal(calls, 18);
+  assert.ok(now - 100_000 > 10 * 60_000);
+  assert.ok(events.some(event => event.kind === 'overloaded'));
+});
+
+test('model listing stays bounded on HTTP 503 so startup can use fallback models', async () => {
+  let calls = 0;
+  const client = new GeminiClient('test-key', {
+    nowImpl: (() => { let now = 0; return () => now; })(),
+    fetchImpl: async () => {
+      calls++;
+      return jsonResponse({ error: { message: 'high demand' } }, 503);
+    }
+  });
+  await assert.rejects(client.listModels(), /temporarily unavailable/);
+  assert.equal(calls, 2);
+});
+
+test('HTTP 503 respects server Retry-After when longer than default wait', () => {
+  const response = new Response('', { status: 503, headers: { 'retry-after': '40' } });
+  assert.equal(classifyApiError(503, 'high demand', response).cooldownMs, 40_000);
 });
 
 test('a malformed HTTP 400 payload keeps JSON fallback instead of entering quota wait', async () => {
