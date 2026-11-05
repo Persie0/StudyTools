@@ -7,7 +7,7 @@ import {
   modelLabel,
   modelMetadata,
   normalizeModelId
-} from './lib/gemini.js?v=20261013-quota-retry';
+} from './lib/gemini.js?v=20261105-unlimited-retry';
 import {
   buildPdfCardPrompt,
   buildSlideExplanationPrompt,
@@ -976,8 +976,12 @@ async function generate() {
         if (kind === 'rate-limit') {
           setStatus('Gemini request/minute limit reached — waiting ' + seconds +
             's before retrying automatically. Your PDF and completed work are preserved.', null);
+        } else if (kind === 'overloaded') {
+          setStatus('Gemini is busy — retrying in ' + seconds +
+            's with no retry limit. Completed work is preserved.', null);
         } else {
-          setStatus('Gemini: ' + (message || 'Retrying') + ' in ' + seconds + 's…', null);
+          setStatus('Gemini: ' + (message || 'Retrying') + ' in ' + seconds +
+            's; retrying automatically until the request succeeds…', null);
         }
       }
     });
