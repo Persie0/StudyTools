@@ -222,8 +222,8 @@ export function extractJsonValue(text) {
 }
 
 const DEFAULT_RATE_LIMIT_WAIT_MS = 65_000;
-const MAX_RATE_RECOVERY_MS = 10 * 60_000;
-const MAX_RATE_LIMIT_RETRIES = 9;
+const STAGGER_RECOVERY_MS = 10 * 60_000;
+const MAX_TRANSIENT_BACKOFF_MS = 60_000;
 const STAGGER_AFTER_RATE_LIMIT_MS = 1000;
 
 function parseDurationMs(value) {
@@ -288,7 +288,8 @@ export function classifyApiError(status, message = '', response = null, metadata
   }
   if (status === 401 || status === 403) return { kind: 'auth', retry: false, cooldownMs: 24 * 60 * 60 * 1000 };
   if (status === 503 || status === 504 || /overloaded|temporarily unavailable|timeout/i.test(value)) {
-    return { kind: 'overloaded', retry: true, cooldownMs: 15000 };
+    return { kind: 'overloaded', retry: true,
+      cooldownMs: metadata.retryDelayMs ?? retryMilliseconds(response, value) ?? 15_000 };
   }
   if (status === 400) return { kind: 'bad-request', retry: false, cooldownMs: 0 };
   return { kind: 'api', retry: status >= 500, cooldownMs: status >= 500 ? 5000 : 0 };
@@ -429,7 +430,7 @@ export class GeminiClient {
       const response = await this.#requestWithKeys(
         `https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000${suffix}`,
         { method: 'GET' },
-        { maxRounds: 1 }
+        { maxRounds: 1, retryUntilSuccess: false }
       );
       const payload = await response.json();
       all.push(...(payload.models || []));
@@ -509,9 +510,11 @@ export class GeminiClient {
       if (!active.length) return null;
       let key = this.#nextAvailableKey();
       if (!key) {
-        const earliest = Math.min(...active.map(item => item.availableAt));
-        await this.#waitUntil(earliest, {
-          kind: 'rate-limit', message: 'Gemini quota cooldown'
+        const soonest = active.reduce((first, item) =>
+          item.availableAt < first.availableAt ? item : first);
+        await this.#waitUntil(soonest.availableAt, {
+          kind: soonest.retryKind || 'rate-limit',
+          message: soonest.retryMessage || 'Gemini quota cooldown'
         });
         key = this.#nextAvailableKey();
       }
@@ -523,7 +526,8 @@ export class GeminiClient {
       }
       if (this.now() < key.availableAt) {
         await this.#waitUntil(key.availableAt, {
-          kind: 'rate-limit', keyIndex: key.index, message: 'Gemini quota cooldown'
+          kind: key.retryKind || 'rate-limit', keyIndex: key.index,
+          message: key.retryMessage || 'Gemini quota cooldown'
         });
       }
       if (this.now() < this.staggerUntil) {
@@ -535,30 +539,33 @@ export class GeminiClient {
     }
   }
 
-  async #requestWithKeys(url, init, { maxRounds = 2, allowBadRequestReturn = false } = {}) {
-    const baseAttempts = Math.max(this.keys.length * maxRounds, 2);
-    const startedAt = this.now();
+  // Generation requests keep their page/group pending until a recoverable error
+  // clears. Model discovery opts out so a busy endpoint cannot block startup.
+  async #requestWithKeys(url, init, {
+    maxRounds = 2, allowBadRequestReturn = false, retryUntilSuccess = true
+  } = {}) {
+    const maxAttempts = Math.max(this.keys.length * maxRounds, 2);
     let lastError = null;
-    let lastKind = null;
-    let rateFailures = 0;
+    let consecutiveFailures = 0;
 
-    for (let attempt = 0; attempt < baseAttempts ||
-      (lastKind === 'rate-limit' && rateFailures < MAX_RATE_LIMIT_RETRIES); attempt++) {
-      if (this.now() - startedAt >= MAX_RATE_RECOVERY_MS) break;
+    for (let attempt = 0; retryUntilSuccess || attempt < maxAttempts; attempt++) {
       const keyEntry = await this.#reserveKey();
       if (!keyEntry) {
         throw new Error(lastError?.message || 'All Gemini API keys were rejected. Check Google AI Studio.');
       }
-      if (this.now() - startedAt >= MAX_RATE_RECOVERY_MS) break;
       const headers = { ...(init.headers || {}), 'x-goog-api-key': keyEntry.key };
       let response;
       try {
         response = await this.fetch(url, { ...init, headers });
       } catch (error) {
         if (/illegal invocation/i.test(String(error?.message || ''))) throw error;
-        lastError = error;
-        lastKind = 'network';
-        keyEntry.availableAt = this.now() + 1000;
+        consecutiveFailures++;
+        const cooldown = Math.min(MAX_TRANSIENT_BACKOFF_MS,
+          1000 * 2 ** Math.min(consecutiveFailures - 1, 6));
+        keyEntry.availableAt = Math.max(keyEntry.availableAt, this.now() + cooldown);
+        keyEntry.retryKind = 'network';
+        keyEntry.retryMessage = 'Network connection to Gemini failed';
+        lastError = new Error('Gemini network error: ' + (error?.message || error));
         continue;
       }
 
@@ -569,7 +576,6 @@ export class GeminiClient {
       );
       if (classification.kind === 'auth') {
         keyEntry.disabled = true;
-        lastKind = 'auth';
         lastError = new Error('Gemini rejected API key #' + keyEntry.index +
           ' (HTTP ' + response.status + (reason ? ' ' + reason : '') + '): ' +
           message.replace(/[.!?\s]+$/, '') + '. Check your key in Google AI Studio.');
@@ -589,34 +595,34 @@ export class GeminiClient {
           (reason ? ' ' + reason : '') + '): ' + message);
       }
 
-      lastKind = classification.kind;
+      consecutiveFailures++;
       if (classification.kind === 'rate-limit') {
-        rateFailures++;
+        // Respect the service's retry-after/RetryInfo and spread out worker
+        // requests after recovering instead of hitting the quota together.
         const cooldown = Math.max(1000, classification.cooldownMs);
-        if (this.now() - startedAt + cooldown > MAX_RATE_RECOVERY_MS ||
-            rateFailures >= MAX_RATE_LIMIT_RETRIES) {
-          throw new Error('Gemini minute rate limit is still exceeded (HTTP ' +
-            response.status + ') after ' + rateFailures + ' attempt(s). ' +
-            'Automatic retries stopped after the maximum wait. Try later, reduce parallel explanations, or change models.');
-        }
         keyEntry.availableAt = Math.max(keyEntry.availableAt, this.now() + cooldown);
-        this.staggerUntil = Math.max(this.staggerUntil, this.now() + MAX_RATE_RECOVERY_MS);
+        keyEntry.retryKind = 'rate-limit';
+        keyEntry.retryMessage = 'Gemini request/minute limit reached';
+        this.staggerUntil = Math.max(this.staggerUntil, this.now() + STAGGER_RECOVERY_MS);
         lastError = new Error('Gemini rate limit (HTTP ' + response.status + '): ' + message);
       } else {
-        keyEntry.availableAt = Math.max(keyEntry.availableAt, this.now() + classification.cooldownMs);
+        // Exponential cooldown avoids continuously hammering an overloaded
+        // model. It is a delay cap, never a retry-count or total-time limit.
+        const exponentialWait = Math.min(MAX_TRANSIENT_BACKOFF_MS,
+          1000 * 2 ** Math.min(consecutiveFailures - 1, 6));
+        const cooldown = Math.max(classification.cooldownMs, exponentialWait);
+        keyEntry.availableAt = Math.max(keyEntry.availableAt, this.now() + cooldown);
+        keyEntry.retryKind = classification.kind;
+        keyEntry.retryMessage = 'Gemini temporarily unavailable (HTTP ' + response.status + ')';
         lastError = new Error('Gemini temporarily unavailable (HTTP ' + response.status + '): ' + message);
       }
     }
 
-    if (lastKind === 'rate-limit') {
-      throw new Error('Gemini rate limit stayed active despite automatic cooldowns. ' +
-        'Try later, reduce parallel explanations, or choose a model with remaining quota.');
-    }
     throw new Error(lastError?.message || 'Gemini request failed after retries. Check connectivity and try again.');
   }
 
   #nextAvailableKey() {
-    const now = Date.now();
+    const now = this.now();
     for (let offset = 0; offset < this.keys.length; offset++) {
       const index = (this.cursor + offset) % this.keys.length;
       const entry = this.keys[index];
