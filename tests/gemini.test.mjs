@@ -448,9 +448,11 @@ test('busy Gemini 503 responses continue beyond ten minutes until the page is ge
 });
 
 test('model listing stays bounded on HTTP 503 so startup can use fallback models', async () => {
+  let now = 0;
   let calls = 0;
   const client = new GeminiClient('test-key', {
-    nowImpl: (() => { let now = 0; return () => now; })(),
+    nowImpl: () => now,
+    sleepImpl: async ms => { now += ms; },
     fetchImpl: async () => {
       calls++;
       return jsonResponse({ error: { message: 'high demand' } }, 503);
